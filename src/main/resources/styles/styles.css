@@ -1,0 +1,24 @@
+#moveBox .move-label {
+    -fx-font-weight: bold;
+}
+
+#moveBox2 .vbox .hbox {
+    -fx-padding: 3px;
+}
+
+#moveBox2 .main-line {
+    -fx-font-weight: bold;
+}
+
+#moveBox2 .move-label {
+    -fx-padding: 0px 4px 0px 0px;
+}
+
+#moveBox2 .move-no-label {
+    -fx-padding: 0px 0px 0px 0px;
+}
+
+#moveBox2 .comment-label {
+    -fx-padding: 0px 4px 0px 0px;
+    -fx-text-fill: darkblue;
+}

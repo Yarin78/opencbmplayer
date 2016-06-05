@@ -1,0 +1,27 @@
+<?import javafx.scene.canvas.Canvas?>
+<?import javafx.scene.control.Label?>
+<?import javafx.scene.control.ScrollPane?>
+<?import javafx.scene.control.SplitPane?>
+<?import javafx.scene.layout.FlowPane?>
+<?import javafx.scene.layout.StackPane?>
+<?import javafx.scene.layout.TilePane?>
+<?import javafx.scene.layout.VBox?>
+<?import javafx.scene.layout.HBox?>
+<StackPane fx:controller="se.yarin.opencbmplayer.Controller" xmlns:fx="http://javafx.com/fxml" stylesheets="/styles/styles.css">
+    <SplitPane fx:id="leftSplitter" orientation="HORIZONTAL" dividerPositions="0.6">
+        <TilePane fx:id="leftPane" alignment="CENTER">
+            <Canvas fx:id="board"></Canvas>
+        </TilePane>
+        <SplitPane fx:id="rightSplitter" orientation="VERTICAL" dividerPositions="0.5" prefHeight="400">
+            <Label maxHeight="100">Video here</Label>
+            <ScrollPane fx:id="movePane" maxWidth="300" minWidth="300">
+                <VBox fx:id="moveBox2">
+
+                </VBox>
+                <!--<FlowPane fx:id="moveBox" hgap="4" vgap="1" minWidth="300" maxWidth="300" prefWrapLength="300">-->
+                <!--</FlowPane>-->
+            </ScrollPane>
+        </SplitPane>
+    </SplitPane>
+
+</StackPane>
