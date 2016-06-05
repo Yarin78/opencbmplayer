@@ -7,10 +7,17 @@
 }
 
 #moveBox2 .main-line {
+    -fx-font-family: Verdana;
     -fx-font-weight: bold;
 }
 
+#moveBox2 .last-line {
+    -fx-font-family: Verdana;
+    -fx-font-style: italic;
+}
+
 #moveBox2 .move-label {
+    -fx-font-family: Verdana;
     -fx-padding: 0px 4px 0px 0px;
 }
 
@@ -21,4 +28,7 @@
 #moveBox2 .comment-label {
     -fx-padding: 0px 4px 0px 0px;
     -fx-text-fill: darkblue;
+}
+
+#moveBox2 .move-delimiter {
 }

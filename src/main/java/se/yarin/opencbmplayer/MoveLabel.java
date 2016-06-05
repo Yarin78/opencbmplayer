@@ -1,18 +1,18 @@
 package se.yarin.opencbmplayer;
 
-import chesspresso.move.Move;
-import javafx.beans.property.StringProperty;
 import javafx.scene.control.Label;
+import yarin.chess.GamePosition;
+import yarin.chess.Move;
 
 public class MoveLabel extends Label {
     private Move move;
-    private int node;
+    private GamePosition node;
 
-    public MoveLabel(Move move, int node) {
+    public MoveLabel(Move move, GamePosition node) {
         this(move, node, null);
     }
 
-    public MoveLabel(Move move, int node, String styleClass) {
+    public MoveLabel(Move move, GamePosition node, String styleClass) {
         if (styleClass != null) {
             getStyleClass().setAll(styleClass);
         }
@@ -25,7 +25,7 @@ public class MoveLabel extends Label {
         return move;
     }
 
-    public int getNode() {
+    public GamePosition getNode() {
         return node;
     }
 }

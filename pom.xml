@@ -68,12 +68,6 @@
         </dependency>
 
         <dependency>
-            <groupId>me.desht</groupId>
-            <artifactId>chesspresso</artifactId>
-            <version>0.9.2</version>
-        </dependency>
-
-        <dependency>
             <groupId>se.yarin</groupId>
             <artifactId>cbhlib</artifactId>
             <version>0.1-SNAPSHOT</version>

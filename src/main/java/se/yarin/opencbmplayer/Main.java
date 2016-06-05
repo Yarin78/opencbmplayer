@@ -1,7 +1,5 @@
 package se.yarin.opencbmplayer;
 
-import chesspresso.game.Game;
-import chesspresso.pgn.PGNReader;
 import de.codecentric.centerdevice.javafxsvg.SvgImageLoaderFactory;
 import javafx.application.Application;
 import javafx.fxml.FXMLLoader;
