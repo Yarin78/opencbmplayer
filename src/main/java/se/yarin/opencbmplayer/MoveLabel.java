@@ -9,14 +9,6 @@ public class MoveLabel extends Label {
     private GamePosition node;
 
     public MoveLabel(Move move, GamePosition node) {
-        this(move, node, null);
-    }
-
-    public MoveLabel(Move move, GamePosition node, String styleClass) {
-        if (styleClass != null) {
-            getStyleClass().setAll(styleClass);
-        }
-
         this.move = move;
         this.node = node;
     }

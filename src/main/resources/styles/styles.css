@@ -1,34 +1,36 @@
-#moveBox .move-label {
+#moveBox {
+    -fx-background-color: #DDD;
+    -fx-text-fill: #222;
+}
+
+#moveBox .selected-move {
+    -fx-background-color: #222;
+    -fx-text-fill: #DDD;
+}
+
+
+#moveBox .label {
+    -fx-font-family: Verdana;
+}
+
+#moveBox .main-line {
     -fx-font-weight: bold;
 }
 
-#moveBox2 .vbox .hbox {
-    -fx-padding: 3px;
-}
-
-#moveBox2 .main-line {
-    -fx-font-family: Verdana;
-    -fx-font-weight: bold;
-}
-
-#moveBox2 .last-line {
-    -fx-font-family: Verdana;
+#moveBox .last-line {
     -fx-font-style: italic;
 }
 
-#moveBox2 .move-label {
-    -fx-font-family: Verdana;
-    -fx-padding: 0px 4px 0px 0px;
+#moveBox .variation-name {
+    -fx-font-weight: bold;
+    -fx-underline: true;
 }
 
-#moveBox2 .move-no-label {
+#moveBox .variation-head {
+    -fx-underline: true;
+}
+
+#moveBox .comment-label {
     -fx-padding: 0px 0px 0px 0px;
-}
-
-#moveBox2 .comment-label {
-    -fx-padding: 0px 4px 0px 0px;
     -fx-text-fill: darkblue;
-}
-
-#moveBox2 .move-delimiter {
 }

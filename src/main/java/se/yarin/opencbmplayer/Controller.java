@@ -1,6 +1,7 @@
 package se.yarin.opencbmplayer;
 
 import javafx.collections.ObservableList;
+import javafx.event.ActionEvent;
 import javafx.fxml.FXML;
 import javafx.fxml.Initializable;
 import javafx.geometry.Insets;
@@ -9,14 +10,14 @@ import javafx.scene.Node;
 import javafx.scene.Scene;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
+import javafx.scene.control.Control;
 import javafx.scene.control.Label;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.control.SplitPane;
+import javafx.scene.effect.BlendMode;
 import javafx.scene.image.Image;
 import javafx.scene.input.MouseEvent;
-import javafx.scene.layout.HBox;
-import javafx.scene.layout.TilePane;
-import javafx.scene.layout.VBox;
+import javafx.scene.layout.*;
 import javafx.scene.paint.Color;
 import javafx.scene.shape.Rectangle;
 import javafx.scene.text.Text;
@@ -34,8 +35,7 @@ import yarin.chess.Piece;
 
 import java.io.IOException;
 import java.net.URL;
-import java.util.List;
-import java.util.ResourceBundle;
+import java.util.*;
 
 public class Controller implements Initializable {
 
@@ -63,10 +63,11 @@ public class Controller implements Initializable {
     private SplitPane rightSplitter;
 
     @FXML
-    private VBox moveBox2;
+    private VBox moveBox;
 
     private AnnotatedGame game;
     private GamePosition gameCursor;
+    private Map<GamePosition, MoveLabel> positionLabelMap = new HashMap<>();
 
     public Controller() {
     }
@@ -90,7 +91,8 @@ public class Controller implements Initializable {
 
 
     private void drawBoard() {
-//        log.debug("drawing board at node " + game.getCurNode());
+        log.debug("starting to draw board");
+        long start = System.currentTimeMillis();
 //        log.debug("rightSplitter width = " + rightSplitter.getWidth() + ", moveBox width " + moveBox.getWidth());
 //        log.debug("rightSplitter height " + rightSplitter.getHeight());
 
@@ -132,6 +134,8 @@ public class Controller implements Initializable {
             }
         }
 
+        long stop = System.currentTimeMillis();
+        log.debug("done in " + (stop-start) + " ms");
     }
 
     private void drawPiece(GraphicsContext gc, int x, int y, Piece piece) {
@@ -163,131 +167,153 @@ public class Controller implements Initializable {
 
     private void addNewMoveLine(int level) {
         HBox moveLine = new HBox();
-        moveLine.setPadding(new Insets(0, 0, 0, 8 * level));
-        moveBox2.getChildren().add(moveLine);
+        moveLine.getStyleClass().add("hbox");
+        moveLine.setPadding(new Insets(2, 0, 2, 8 * level));
+        moveBox.getChildren().add(moveLine);
     }
 
-    private void addMoveBox(GamePosition preNode, Move move, boolean showMoveNumber, int level, boolean inlineVariation) {
-        GamePosition postNode = preNode.getForwardPosition(move);
-        List<Annotation> annotations = game.getAnnotations(postNode);
-
-        ObservableList<Node> noRows = moveBox2.getChildren();
-        if (noRows.size() == 0 || ((HBox) moveBox2.getChildren().get(noRows.size() - 1)).getChildren().size() == 60) {
+    private void addControl(Control control, int level, double leftPadding, double rightPadding, String... styleClass) {
+        ObservableList<Node> noRows = moveBox.getChildren();
+        if (noRows.size() == 0 || ((HBox) moveBox.getChildren().get(noRows.size() - 1)).getChildren().size() == 60) {
             addNewMoveLine(level);
         }
-        HBox lastRow = (HBox) moveBox2.getChildren().get(noRows.size() - 1);
+        HBox lastRow = (HBox) moveBox.getChildren().get(noRows.size() - 1);
+
+        control.getStyleClass().addAll(styleClass);
+        control.setPadding(new Insets(0, rightPadding, 0, leftPadding));
+        lastRow.getChildren().add(control);
+    }
+
+    private void addText(String text, int level, double leftPadding, double rightPadding, String... styleClass) {
+        addControl(new Label(text), level, leftPadding, rightPadding, styleClass);
+    }
+
+    private void addText(String text, int level, String... styleClass) {
+        addText(text, level, 0.0, 0.0, styleClass);
+    }
+
+    private void addMoveBox(GamePosition preNode, Move move,
+                            boolean showMoveNumber, int level, boolean inlineVariation,
+                            boolean headOfVariation) {
+        GamePosition postNode = preNode.getForwardPosition(move);
+        List<Annotation> annotations = game.getAnnotations(postNode);
 
         // Add pre-move comments
         for (Annotation annotation : annotations) {
             String preText = annotation.getPreText();
             if (preText != null) {
-                Label commentLbl = new Label(preText);
-                commentLbl.getStyleClass().add("comment-label");
-//                log.debug("width " + getLabelLength(commentLbl));
-                lastRow.getChildren().add(commentLbl);
+                addText(preText, level, "comment-label");
             }
         }
 
-        // Add, if needed, move number
+        // Add move (and if needed, move number)
+        MoveLabel lbl = new MoveLabel(move, postNode);
+        String moveText = "";
         if (showMoveNumber || preNode.getPlayerToMove() == Piece.PieceColor.WHITE) {
-            Label moveNoLbl = new Label();
-            if (level == 0) {
-                moveNoLbl.getStyleClass().add("main-line");
-            } else if (inlineVariation) {
-                moveNoLbl.getStyleClass().add("last-line");
-            }
-            moveNoLbl.getStyleClass().add("move-no-label");
-            String s = String.format("%d.", preNode.getMoveNumber());
-            if (preNode.getPlayerToMove() == Piece.PieceColor.BLACK) s += "..";
-            moveNoLbl.setText(s);
-            lastRow.getChildren().add(moveNoLbl);
+            moveText = String.format("%d.", preNode.getMoveNumber());
+            if (preNode.getPlayerToMove() == Piece.PieceColor.BLACK) moveText += "..";
         }
 
-        // Add move
-        MoveLabel lbl = new MoveLabel(move, postNode, "move-label");
-        lbl.setText(move.toString(preNode.getPosition()));
+        moveText += move.toString(preNode.getPosition());
+        lbl.setText(moveText);
         lbl.setOnMouseClicked(Controller.this::handleMoveSelected);
-        if (level == 0) {
-            lbl.getStyleClass().add("main-line");
-        } else if (inlineVariation) {
-            lbl.getStyleClass().add("last-line");
+        List<String> styles = new ArrayList<>();
+        double leftPadding = 4, rightPadding = 4;
+        if (headOfVariation) {
+            leftPadding = 0;
         }
-        lastRow.getChildren().add(lbl);
+        if (postNode.isEndOfVariation()) {
+            rightPadding = 0;
+        }
+        if (level == 0) {
+            styles.add("main-line");
+        } else if (inlineVariation) {
+            styles.add("last-line");
+        }
+        if (headOfVariation && !inlineVariation && level > 1) {
+            styles.add("variation-head");
+            leftPadding = 4;
+        }
+
+        lbl.getStyleClass().addAll(styles);
+        positionLabelMap.put(postNode, lbl);
+        addControl(lbl, level, leftPadding, rightPadding);
 
         // Add post-move comments
         for (Annotation annotation : annotations) {
             String postText = annotation.getPostText();
             if (postText != null) {
-                Label commentLbl = new Label(postText);
-                commentLbl.getStyleClass().add("comment-label");
-//                log.debug("width " + getLabelLength(commentLbl));
-                lastRow.getChildren().add(commentLbl);
+                addText(postText, level, "comment-label");
             }
         }
     }
 
-    private void addDelimiter(String text, int level) {
-        ObservableList<Node> noRows = moveBox2.getChildren();
-        if (noRows.size() == 0 || ((HBox) moveBox2.getChildren().get(noRows.size() - 1)).getChildren().size() == 60) {
-            addNewMoveLine(level);
-        }
-        HBox lastRow = (HBox) moveBox2.getChildren().get(noRows.size() - 1);
-
-        Label lbl = new Label(text);
-        lbl.getStyleClass().add("move-delimiter");
-        lastRow.getChildren().add(lbl);
+    private boolean allVariationsAreSingleLine(GamePosition position) {
+        return position.getMoves()
+                .stream()
+                .skip(1) // Skip the main variation
+                .allMatch(move -> position.getForwardPosition(move).isSingleLine());
     }
 
-    private boolean allSingleLines(GamePosition position) {
-        return position.getMoves().stream().allMatch(move -> position.getForwardPosition(move).isSingleLine());
-    }
-
-    private void generateMoveControls(GamePosition position, boolean showMoveNumber, int level, boolean inlineVariation) {
+    private void generateMoveControls(GamePosition position, boolean showMoveNumber,
+                                      int level, boolean inlineVariation, String linePrefix) {
         if (position.getLastMove() != null) {
-            addMoveBox(position.getBackPosition(), position.getLastMove(), showMoveNumber, level, inlineVariation);
+            addMoveBox(position.getBackPosition(), position.getLastMove(), showMoveNumber, level, inlineVariation, true);
             showMoveNumber = false;
         }
 
         while (!position.isEndOfVariation()) {
             List<Move> moves = position.getMoves();
             if (moves.size() == 1) {
-                addMoveBox(position, position.getMainMove(), showMoveNumber, level, inlineVariation);
+                addMoveBox(position, position.getMainMove(), showMoveNumber, level, inlineVariation, false);
                 showMoveNumber = false;
             } else {
                 if (inlineVariation) throw new RuntimeException("Found variations in an inline variation");
                 if (level == 0) {
                     // Show main move on existing line, but then one new paragraph per sub-line,
                     // each paragraph starting with [ and ending with ]
-                    addMoveBox(position, position.getMainMove(), showMoveNumber, level, false);
+                    addMoveBox(position, position.getMainMove(), showMoveNumber, level, false, false);
 
                     for (int i = 1; i < moves.size(); i++) {
                         addNewMoveLine(level + 1);
-                        addDelimiter("[", level + 1);
+                        addText("[", level + 1);
                         Move subMove = moves.get(i);
-                        generateMoveControls(position.getForwardPosition(subMove), true, level + 1, false);
-                        addDelimiter("]", level + 1);
+                        generateMoveControls(position.getForwardPosition(subMove), true, level + 1, false, linePrefix);
+                        addText("]", level + 1);
                     }
                     addNewMoveLine(level);
                     showMoveNumber = true;
-                } else if (allSingleLines(position)) {
+                } else if (allVariationsAreSingleLine(position)) {
                     // Show the alternatives inline, within () and separated by ;
-                    addMoveBox(position, position.getMainMove(), showMoveNumber, level, false);
+                    addMoveBox(position, position.getMainMove(), showMoveNumber, level, false, false);
 
-                    addDelimiter("(", level);
+                    addText("(", level, 6.0, 0.0, "last-line");
                     for (int i = 1; i < moves.size(); i++) {
-                        if (i > 1) addDelimiter(";", level);
-                        Move subMove = moves.get(i);
-                        generateMoveControls(position.getForwardPosition(subMove), true, level, true);
+                        if (i > 1) addText(";", level, 0.0, 3.0, "last-line");
+                        generateMoveControls(position.getForwardPosition(moves.get(i)), true, level, true, linePrefix);
                     }
-                    addDelimiter(")", level);
+                    addText(")", level, "last-line");
                     showMoveNumber = true;
                 } else {
-                    // Show subvariation annotated with A,B,C, then e.g. B1, B2, B3
+                    // Subvariations are marked with letters and digits alternatively for each level, e.g. "B1c"
+                    // The order is: [A-Z], [1-9], [a-z], [1-9], [1-9] and repeat digits
+                    // But replace [1-9] with [a-z] if there are 10 or more lines at that level
+                    // It won't look pretty if there are more than 26 lines, but CB has the same issue
+                    char startChar = '1';
+                    if (level == 1) startChar = 'A';
+                    if (level == 3) startChar = 'a';
+                    if (startChar == '1' && moves.size() >= 10) startChar = 'a';
+
                     for (int i = 0; i < moves.size(); i++) {
+                        if (i > 0) addText(";", level + 1);
                         addNewMoveLine(level + 1);
-                        addDelimiter(String.format("%c)", (char) ('A'+i)), level + 1);
-                        Move subMove = moves.get(i);
-                        generateMoveControls(position.getForwardPosition(subMove), true, level + 1, false);
+
+                        String newLinePrefix = linePrefix + (char) (startChar+i);
+                        addText(String.format("%s)", newLinePrefix), level + 1, "variation-name");
+                        // The main line goes last
+                        Move subMove = moves.get((i+1) % moves.size());
+                        generateMoveControls(position.getForwardPosition(subMove), true, level + 1, false, newLinePrefix);
+
                     }
                     break;
                 }
@@ -299,27 +325,60 @@ public class Controller implements Initializable {
     private void drawMoves() {
         log.debug("starting to generate move controls");
         long start = System.currentTimeMillis();
-        generateMoveControls(game, true, 0, false);
+        positionLabelMap = new HashMap<>();
+        moveBox.getChildren().clear();
+        generateMoveControls(game, true, 0, false, "");
         long stop = System.currentTimeMillis();
-        log.debug("generate move controls in " + (stop-start) + " ms");
+        log.debug("done in " + (stop-start) + " ms");
+    }
+
+    private void selectPosition(GamePosition position) {
+        if (gameCursor != null) {
+            // Unselect previous selection
+            MoveLabel moveLabel = positionLabelMap.get(gameCursor);
+            if (moveLabel != null) {
+                moveLabel.getStyleClass().remove("selected-move");
+            }
+        }
+
+        gameCursor = position;
+
+        // Highlight the selected position
+        MoveLabel moveLabel = positionLabelMap.get(gameCursor);
+        if (moveLabel != null) {
+            moveLabel.getStyleClass().add("selected-move");
+        }
+
+        drawBoard();
     }
 
     private void handleMoveSelected(MouseEvent mouseEvent) {
         MoveLabel source = (MoveLabel) mouseEvent.getSource();
         log.debug("Clicked on " + source.getMove() + ", node " + source.getNode());
-        gameCursor = source.getNode();
-        drawBoard();
+        selectPosition(source.getNode());
     }
 
     @Override
     public void initialize(URL location, ResourceBundle resources) {
-//        String cbhFile = "/Users/yarin/Dropbox/ChessBase/My Games/My White Openings.cbh";
+        reloadGame(null);
+
+        board.widthProperty().bind(leftPane.widthProperty().subtract(20));
+        board.heightProperty().bind(leftPane.heightProperty().subtract(20));
+//        moveBox.prefWidthProperty().bind(movePane.widthProperty());
+
+        board.widthProperty().addListener(observable -> drawBoard());
+        board.heightProperty().addListener(observable -> drawBoard());
+    }
+
+    public void reloadGame(ActionEvent actionEvent) {
+        //        String cbhFile = "/Users/yarin/Dropbox/ChessBase/My Games/My White Openings.cbh";
 //        String cbhFile = "/Users/yarin/Dropbox/ChessBase/My Games/jimmy.cbh";
-        String cbhFile = "/Users/yarin/src/cbhlib/src/test/java/yarin/cbhlib/databases/cbhlib_test.cbh";
+//        String cbhFile = "/Users/yarin/src/cbhlib/src/test/java/yarin/cbhlib/databases/cbhlib_test.cbh";
+        String cbhFile = "/Users/yarin/src/opencbmplayer/src/main/resources/cbmplayertest.cbh";
 
         try {
             Database db = Database.open(cbhFile);
-            GameHeader gameHeader = db.getGameHeader(6);
+            GameHeader gameHeader = db.getGameHeader(2);
             this.game = gameHeader.getGame();
             this.gameCursor = this.game;
         } catch (IOException e) {
@@ -330,15 +389,7 @@ public class Controller implements Initializable {
             throw new RuntimeException("Failed to load the game", e);
         }
 
-
         drawMoves();
-
-        board.widthProperty().bind(leftPane.widthProperty().subtract(20));
-        board.heightProperty().bind(leftPane.heightProperty().subtract(20));
-//        moveBox.prefWidthProperty().bind(movePane.widthProperty());
-
-        board.widthProperty().addListener(observable -> drawBoard());
-        board.heightProperty().addListener(observable -> drawBoard());
+        drawBoard();
     }
-
 }
