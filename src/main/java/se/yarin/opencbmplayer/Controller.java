@@ -4,7 +4,7 @@ import javafx.event.ActionEvent;
 import javafx.fxml.FXML;
 import javafx.fxml.Initializable;
 import javafx.geometry.Insets;
-import javafx.scene.Group;
+import javafx.scene.Node;
 import javafx.scene.Scene;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
@@ -14,11 +14,11 @@ import javafx.scene.control.ScrollPane;
 import javafx.scene.control.SplitPane;
 import javafx.scene.image.Image;
 import javafx.scene.input.MouseEvent;
-import javafx.scene.layout.*;
+import javafx.scene.layout.HBox;
+import javafx.scene.layout.TilePane;
+import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
 import javafx.scene.shape.Rectangle;
-import javafx.scene.text.Font;
-import javafx.scene.text.FontWeight;
 import javafx.scene.text.Text;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -44,7 +44,7 @@ public class Controller implements Initializable {
     private static Image boardBackground = new Image("/images/wooden-background.jpg");
 
     private final double BOARD_EDGE_SIZE = 0.15; // Size of board edge relative to the size of a square
-    private final double MOVE_BOX_RIGHT_MARGIN = 15; // Compensate for the padding
+    private final double MOVE_BOX_RIGHT_MARGIN = 25; // Compensate for the padding and some extra space to be safe
 
     private double squareSize, boardSize, xMargin, yMargin, edgeSize;
 
@@ -162,6 +162,7 @@ public class Controller implements Initializable {
 
     private double currentRowWidth;
     private HBox currentRow;
+    private boolean pullDownLastIfEOL;
     private HashMap<String, Double> labelWidthCache = new HashMap<>(); // TODO: Make real cache
 
     private void addNewRow(int level) {
@@ -200,12 +201,29 @@ public class Controller implements Initializable {
 
         if (!(control instanceof Label)) throw new RuntimeException("Not supported yet");
         double width = getLabelWidth((Label) control);
+        boolean singleCharacter = ((Label) control).getText().length() == 1;
 //        log.debug(((Label) control).getText() + " " + leftPadding + " " + currentRow.getChildren().size());
 
 //        log.debug("currentRowWidth = " + currentRowWidth + ", controlWidth = " + width + ", moveBox width = " + moveBox.getWidth());
-        if (currentRowWidth + width + leftPadding + rightPadding > moveBox.getWidth() - MOVE_BOX_RIGHT_MARGIN) {
+        // Force single characters to be on same line; we give enough margin to make this possible
+        if (!singleCharacter && currentRowWidth + width + leftPadding + rightPadding >
+                moveBox.getWidth() - MOVE_BOX_RIGHT_MARGIN) {
+            Node last = null;
+            if (pullDownLastIfEOL) {
+                int lastIndex = currentRow.getChildren().size() - 1;
+                last = currentRow.getChildren().get(lastIndex);
+                currentRow.getChildren().remove(lastIndex);
+            }
             addNewRow(level);
+            if (last != null) {
+                currentRow.getChildren().add(last);
+                if (last instanceof Label) {
+                    currentRowWidth += getLabelWidth((Label) last);
+                }
+            }
         }
+
+        pullDownLastIfEOL = false;
 
         if (currentRow.getChildren().size() == 0) {
             leftPadding = 0;
@@ -350,6 +368,7 @@ public class Controller implements Initializable {
                     addMove(position, position.getMainMove(), showMoveNumber, level, false, false);
 
                     addText("(", level, 6.0, 0.0, "last-line");
+                    pullDownLastIfEOL = true;
                     for (int i = 1; i < moves.size(); i++) {
                         if (i > 1) addText(";", level, 0.0, 3.0, "last-line");
                         generateMoveControls(position.getForwardPosition(moves.get(i)), true, level, true, linePrefix);
@@ -452,7 +471,7 @@ public class Controller implements Initializable {
 
         try {
             Database db = Database.open(cbhFile);
-            GameHeader gameHeader = db.getGameHeader(2);
+            GameHeader gameHeader = db.getGameHeader(3);
             this.game = gameHeader.getGame();
             this.gameCursor = this.game;
         } catch (IOException e) {
