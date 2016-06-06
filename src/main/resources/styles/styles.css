@@ -1,11 +1,15 @@
+#movePane {
+    -fx-background: #DDD;
+}
+
 #moveBox {
-    -fx-background-color: #DDD;
     -fx-text-fill: #222;
+    -fx-padding: 4px;
 }
 
 #moveBox .selected-move {
     -fx-background-color: #222;
-    -fx-text-fill: #DDD;
+    -fx-text-fill: #EEE;
 }
 
 

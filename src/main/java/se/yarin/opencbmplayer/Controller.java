@@ -1,12 +1,10 @@
 package se.yarin.opencbmplayer;
 
-import javafx.collections.ObservableList;
 import javafx.event.ActionEvent;
 import javafx.fxml.FXML;
 import javafx.fxml.Initializable;
 import javafx.geometry.Insets;
 import javafx.scene.Group;
-import javafx.scene.Node;
 import javafx.scene.Scene;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
@@ -14,12 +12,13 @@ import javafx.scene.control.Control;
 import javafx.scene.control.Label;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.control.SplitPane;
-import javafx.scene.effect.BlendMode;
 import javafx.scene.image.Image;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.*;
 import javafx.scene.paint.Color;
 import javafx.scene.shape.Rectangle;
+import javafx.scene.text.Font;
+import javafx.scene.text.FontWeight;
 import javafx.scene.text.Text;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -45,6 +44,8 @@ public class Controller implements Initializable {
     private static Image boardBackground = new Image("/images/wooden-background.jpg");
 
     private final double BOARD_EDGE_SIZE = 0.15; // Size of board edge relative to the size of a square
+    private final double MOVE_BOX_RIGHT_MARGIN = 15; // Compensate for the padding
+
     private double squareSize, boardSize, xMargin, yMargin, edgeSize;
 
     @FXML
@@ -53,11 +54,11 @@ public class Controller implements Initializable {
     @FXML
     private TilePane leftPane;
 
-//    @FXML
-//    private FlowPane moveBox;
-
     @FXML
     private ScrollPane movePane;
+
+    @FXML
+    private SplitPane leftSplitter;
 
     @FXML
     private SplitPane rightSplitter;
@@ -93,8 +94,9 @@ public class Controller implements Initializable {
     private void drawBoard() {
         log.debug("starting to draw board");
         long start = System.currentTimeMillis();
-//        log.debug("rightSplitter width = " + rightSplitter.getWidth() + ", moveBox width " + moveBox.getWidth());
-//        log.debug("rightSplitter height " + rightSplitter.getHeight());
+//        log.debug("rightSplitter width: " + rightSplitter.getWidth());
+//        log.debug("movePane width: " + movePane.getWidth());
+//        log.debug("moveBox width: " + moveBox.getWidth());
 
         GraphicsContext gc = board.getGraphicsContext2D();
 
@@ -158,45 +160,105 @@ public class Controller implements Initializable {
                 sq.getX(), sq.getY(), sq.getWidth(), sq.getHeight());
     }
 
-    private double getLabelLength(Label lbl) {
-        Text text = new Text(lbl.getText());
-        new Scene(new Group(text));
-        text.applyCss();
-        return text.getLayoutBounds().getWidth();
+    private double currentRowWidth;
+    private HBox currentRow;
+    private HashMap<String, Double> labelWidthCache = new HashMap<>(); // TODO: Make real cache
+
+    private void addNewRow(int level) {
+        currentRow = new HBox();
+        currentRowWidth = 16 * level;
+        currentRow.setPadding(new Insets(2, 0, 2, currentRowWidth));
+        moveBox.getChildren().add(currentRow);
+//        log.debug("new row");
     }
 
-    private void addNewMoveLine(int level) {
-        HBox moveLine = new HBox();
-        moveLine.getStyleClass().add("hbox");
-        moveLine.setPadding(new Insets(2, 0, 2, 8 * level));
-        moveBox.getChildren().add(moveLine);
+    // Determines the width of a label based ONLY on the text and it's styleclasses (not padding)
+    private double getLabelWidth(Label label, String... extraStyleClasses) {
+        Text text = new Text(label.getText());
+        text.getStyleClass().addAll(label.getStyleClass());
+        text.getStyleClass().addAll(extraStyleClasses);
+
+        String cacheId = text.getStyleClass() + "#" + label.getText();
+        if (labelWidthCache.containsKey(cacheId)) {
+            return labelWidthCache.get(cacheId);
+        }
+
+        HBox hbox = new HBox(text);
+        hbox.setId("moveBox");
+        Scene scene = new Scene(hbox);
+        scene.getStylesheets().add("/styles/styles.css");
+//        log.info("without css: " + text.getLayoutBounds().getWidth());
+        text.applyCss();
+//        log.info("with css: " + text.getLayoutBounds().getWidth());
+        double width = text.getLayoutBounds().getWidth();
+        labelWidthCache.put(cacheId, width);
+        return width;
     }
 
     private void addControl(Control control, int level, double leftPadding, double rightPadding, String... styleClass) {
-        ObservableList<Node> noRows = moveBox.getChildren();
-        if (noRows.size() == 0 || ((HBox) moveBox.getChildren().get(noRows.size() - 1)).getChildren().size() == 60) {
-            addNewMoveLine(level);
-        }
-        HBox lastRow = (HBox) moveBox.getChildren().get(noRows.size() - 1);
-
         control.getStyleClass().addAll(styleClass);
+
+        if (!(control instanceof Label)) throw new RuntimeException("Not supported yet");
+        double width = getLabelWidth((Label) control);
+//        log.debug(((Label) control).getText() + " " + leftPadding + " " + currentRow.getChildren().size());
+
+//        log.debug("currentRowWidth = " + currentRowWidth + ", controlWidth = " + width + ", moveBox width = " + moveBox.getWidth());
+        if (currentRowWidth + width + leftPadding + rightPadding > moveBox.getWidth() - MOVE_BOX_RIGHT_MARGIN) {
+            addNewRow(level);
+        }
+
+        if (currentRow.getChildren().size() == 0) {
+            leftPadding = 0;
+        }
+
         control.setPadding(new Insets(0, rightPadding, 0, leftPadding));
-        lastRow.getChildren().add(control);
+        currentRow.getChildren().add(control);
+        currentRowWidth += width + leftPadding + rightPadding;
+    }
+
+    private boolean fitsOnRow(String text, double leftPadding, double rightPadding, String... styleClass) {
+        Label label = new Label(text);
+        double width = getLabelWidth(label, styleClass);
+        return currentRowWidth + width + leftPadding + rightPadding <= moveBox.getWidth() - MOVE_BOX_RIGHT_MARGIN;
     }
 
     private void addText(String text, int level, double leftPadding, double rightPadding, String... styleClass) {
-        addControl(new Label(text), level, leftPadding, rightPadding, styleClass);
+        if (text.trim().length() == 0) return;
+
+        // Check if the entire text fits on the row
+        if (fitsOnRow(text, leftPadding, rightPadding, styleClass)) {
+            addControl(new Label(text), level, leftPadding, rightPadding, styleClass);
+        } else {
+//            log.debug("Doesn't fit: " + text);
+            // Check if we can split it
+            int cur = text.indexOf(' ');
+            if (cur < 0) {
+                // If there are no spaces, we can't do so much
+                addControl(new Label(text), level, leftPadding, rightPadding, styleClass);
+            } else {
+                int best = cur; // Always take the first word, even if it's too long (can't do better)
+                while (cur != -1 && fitsOnRow(text.substring(0, cur), leftPadding, 0, styleClass)) {
+                    best = cur;
+                    cur = text.indexOf(' ', cur + 1);
+                }
+//                log.debug("DID FIT: " + text.substring(0, best));
+                addControl(new Label(text.substring(0, best)), level, leftPadding, 0, styleClass);
+                addNewRow(level);
+                // Recursively split the next part, if needed
+                addText(text.substring(best + 1), level, 0, rightPadding, styleClass);
+            }
+        }
     }
 
     private void addText(String text, int level, String... styleClass) {
         addText(text, level, 0.0, 0.0, styleClass);
     }
 
-    private void addMoveBox(GamePosition preNode, Move move,
-                            boolean showMoveNumber, int level, boolean inlineVariation,
-                            boolean headOfVariation) {
+    private void addMove(GamePosition preNode, Move move,
+                         boolean showMoveNumber, int level, boolean inlineVariation,
+                         boolean headOfVariation) {
         GamePosition postNode = preNode.getForwardPosition(move);
-        List<Annotation> annotations = game.getAnnotations(postNode);
+        List<Annotation> annotations = game.getAnnotations(preNode);
 
         // Add pre-move comments
         for (Annotation annotation : annotations) {
@@ -258,34 +320,34 @@ public class Controller implements Initializable {
     private void generateMoveControls(GamePosition position, boolean showMoveNumber,
                                       int level, boolean inlineVariation, String linePrefix) {
         if (position.getLastMove() != null) {
-            addMoveBox(position.getBackPosition(), position.getLastMove(), showMoveNumber, level, inlineVariation, true);
+            addMove(position.getBackPosition(), position.getLastMove(), showMoveNumber, level, inlineVariation, true);
             showMoveNumber = false;
         }
 
         while (!position.isEndOfVariation()) {
             List<Move> moves = position.getMoves();
             if (moves.size() == 1) {
-                addMoveBox(position, position.getMainMove(), showMoveNumber, level, inlineVariation, false);
+                addMove(position, position.getMainMove(), showMoveNumber, level, inlineVariation, false);
                 showMoveNumber = false;
             } else {
                 if (inlineVariation) throw new RuntimeException("Found variations in an inline variation");
                 if (level == 0) {
                     // Show main move on existing line, but then one new paragraph per sub-line,
                     // each paragraph starting with [ and ending with ]
-                    addMoveBox(position, position.getMainMove(), showMoveNumber, level, false, false);
+                    addMove(position, position.getMainMove(), showMoveNumber, level, false, false);
 
                     for (int i = 1; i < moves.size(); i++) {
-                        addNewMoveLine(level + 1);
+                        addNewRow(level + 1);
                         addText("[", level + 1);
                         Move subMove = moves.get(i);
                         generateMoveControls(position.getForwardPosition(subMove), true, level + 1, false, linePrefix);
                         addText("]", level + 1);
                     }
-                    addNewMoveLine(level);
+                    addNewRow(level);
                     showMoveNumber = true;
                 } else if (allVariationsAreSingleLine(position)) {
                     // Show the alternatives inline, within () and separated by ;
-                    addMoveBox(position, position.getMainMove(), showMoveNumber, level, false, false);
+                    addMove(position, position.getMainMove(), showMoveNumber, level, false, false);
 
                     addText("(", level, 6.0, 0.0, "last-line");
                     for (int i = 1; i < moves.size(); i++) {
@@ -306,7 +368,7 @@ public class Controller implements Initializable {
 
                     for (int i = 0; i < moves.size(); i++) {
                         if (i > 0) addText(";", level + 1);
-                        addNewMoveLine(level + 1);
+                        addNewRow(level + 1);
 
                         String newLinePrefix = linePrefix + (char) (startChar+i);
                         addText(String.format("%s)", newLinePrefix), level + 1, "variation-name");
@@ -323,10 +385,16 @@ public class Controller implements Initializable {
     }
 
     private void drawMoves() {
+        if (moveBox.getWidth() == 0) {
+            log.info("Can't generate moves because moveBox width is not known");
+            return;
+        }
         log.debug("starting to generate move controls");
         long start = System.currentTimeMillis();
         positionLabelMap = new HashMap<>();
         moveBox.getChildren().clear();
+        addNewRow(0);
+
         generateMoveControls(game, true, 0, false, "");
         long stop = System.currentTimeMillis();
         log.debug("done in " + (stop-start) + " ms");
@@ -334,7 +402,7 @@ public class Controller implements Initializable {
 
     private void selectPosition(GamePosition position) {
         if (gameCursor != null) {
-            // Unselect previous selection
+            // Deselect previous selection
             MoveLabel moveLabel = positionLabelMap.get(gameCursor);
             if (moveLabel != null) {
                 moveLabel.getStyleClass().remove("selected-move");
@@ -364,10 +432,16 @@ public class Controller implements Initializable {
 
         board.widthProperty().bind(leftPane.widthProperty().subtract(20));
         board.heightProperty().bind(leftPane.heightProperty().subtract(20));
-//        moveBox.prefWidthProperty().bind(movePane.widthProperty());
+
+        movePane.prefWidthProperty().bind(rightSplitter.widthProperty());
+        movePane.prefHeightProperty().bind(rightSplitter.heightProperty());
+        moveBox.prefWidthProperty().bind(movePane.widthProperty().subtract(20)); // Compensate for vertical scrollbar
+
+        moveBox.widthProperty().addListener(observable -> drawMoves());
 
         board.widthProperty().addListener(observable -> drawBoard());
         board.heightProperty().addListener(observable -> drawBoard());
+
     }
 
     public void reloadGame(ActionEvent actionEvent) {

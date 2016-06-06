@@ -16,7 +16,7 @@
         <SplitPane fx:id="rightSplitter" orientation="VERTICAL" dividerPositions="0.5" prefHeight="400">
             <!--<Label maxHeight="100">Video here</Label>-->
             <Button fx:id="reloadBtn" onAction="#reloadGame">Reload</Button>
-            <ScrollPane fx:id="movePane" maxWidth="300" minWidth="300">
+            <ScrollPane fx:id="movePane" vbarPolicy="ALWAYS" hbarPolicy="NEVER">
                 <VBox fx:id="moveBox">
 
                 </VBox>
