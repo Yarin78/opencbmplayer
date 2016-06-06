@@ -22,10 +22,11 @@ import javafx.scene.shape.Rectangle;
 import javafx.scene.text.Text;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import yarin.cbhlib.AnnotatedGame;
-import yarin.cbhlib.Database;
-import yarin.cbhlib.GameHeader;
+import yarin.cbhlib.*;
 import yarin.cbhlib.annotations.Annotation;
+import yarin.cbhlib.annotations.SymbolAnnotation;
+import yarin.cbhlib.annotations.TextAfterMoveAnnotation;
+import yarin.cbhlib.annotations.TextBeforeMoveAnnotation;
 import yarin.cbhlib.exceptions.CBHException;
 import yarin.cbhlib.exceptions.CBHFormatException;
 import yarin.chess.GamePosition;
@@ -276,33 +277,44 @@ public class Controller implements Initializable {
                          boolean showMoveNumber, int level, boolean inlineVariation,
                          boolean headOfVariation) {
         GamePosition postNode = preNode.getForwardPosition(move);
-        List<Annotation> annotations = game.getAnnotations(preNode);
 
-        // Add pre-move comments
-        for (Annotation annotation : annotations) {
-            String preText = annotation.getPreText();
-            if (preText != null) {
-                addText(preText, level, "comment-label");
-            }
+        String beforeMoveText = null, afterMoveText = null;
+        // TODO: This won't work properly in case of multiple languages
+        TextBeforeMoveAnnotation beforeMoveAnnotation = game.getAnnotation(postNode, TextBeforeMoveAnnotation.class);
+        if (beforeMoveAnnotation != null) beforeMoveText = beforeMoveAnnotation.getText();
+        TextAfterMoveAnnotation afterMoveAnnotation = game.getAnnotation(postNode, TextAfterMoveAnnotation.class);
+        if (afterMoveAnnotation != null) afterMoveText = afterMoveAnnotation.getText();
+        // This assumes there can only be on symbol annotation per move
+        SymbolAnnotation symbols = game.getAnnotation(postNode, SymbolAnnotation.class);
+        MovePrefix movePrefix = symbols == null ? MovePrefix.Nothing : symbols.getMovePrefix();
+        MoveComment moveComment = symbols == null ? MoveComment.Nothing : symbols.getMoveComment();
+        LineEvaluation lineEvaluation = symbols == null ? LineEvaluation.NoEvaluation : symbols.getPositionEval();
+
+        // Add before-move text
+        if (beforeMoveText != null) {
+            addText(beforeMoveText, level, "comment-label");
         }
 
-        // Add move (and if needed, move number)
+        // Add move, symbols and move number
         MoveLabel lbl = new MoveLabel(move, postNode);
-        String moveText = "";
+        String moveText = movePrefix.getSymbol();
         if (showMoveNumber || preNode.getPlayerToMove() == Piece.PieceColor.WHITE) {
-            moveText = String.format("%d.", preNode.getMoveNumber());
+            moveText += String.format("%d.", preNode.getMoveNumber());
             if (preNode.getPlayerToMove() == Piece.PieceColor.BLACK) moveText += "..";
         }
 
         moveText += move.toString(preNode.getPosition());
+        moveText += moveComment.getSymbol();
+        moveText += lineEvaluation.getSymbol();
+
         lbl.setText(moveText);
         lbl.setOnMouseClicked(Controller.this::handleMoveSelected);
         List<String> styles = new ArrayList<>();
         double leftPadding = 4, rightPadding = 4;
-        if (headOfVariation) {
+        if (headOfVariation && beforeMoveText == null) {
             leftPadding = 0;
         }
-        if (postNode.isEndOfVariation()) {
+        if (postNode.isEndOfVariation() && afterMoveText == null) {
             rightPadding = 0;
         }
         if (level == 0) {
@@ -319,12 +331,9 @@ public class Controller implements Initializable {
         positionLabelMap.put(postNode, lbl);
         addControl(lbl, level, leftPadding, rightPadding);
 
-        // Add post-move comments
-        for (Annotation annotation : annotations) {
-            String postText = annotation.getPostText();
-            if (postText != null) {
-                addText(postText, level, "comment-label");
-            }
+        // Add after-move text
+        if (afterMoveText != null) {
+            addText(afterMoveText, level, "comment-label");
         }
     }
 
