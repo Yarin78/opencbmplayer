@@ -20,9 +20,11 @@ import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
 import javafx.scene.shape.Rectangle;
 import javafx.scene.text.Text;
+import javafx.scene.text.TextFlow;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import yarin.cbhlib.*;
+import yarin.cbhlib.Date;
 import yarin.cbhlib.annotations.Annotation;
 import yarin.cbhlib.annotations.SymbolAnnotation;
 import yarin.cbhlib.annotations.TextAfterMoveAnnotation;
@@ -66,6 +68,19 @@ public class Controller implements Initializable {
 
     @FXML
     private VBox moveBox;
+
+    @FXML
+    private VBox notationBox;
+
+    @FXML
+    private TextFlow playerNames;
+
+    @FXML
+    private TextFlow gameDetails;
+
+    @FXML
+    private Text whitePlayerName;
+
 
     private GameHeader gameHeader;
     private AnnotatedGame game;
@@ -347,6 +362,7 @@ public class Controller implements Initializable {
 
     private void generateMoveControls(GamePosition position, boolean showMoveNumber,
                                       int level, boolean inlineVariation, String linePrefix) {
+        // TODO: Try and make this cleaner by using TextFlow, so we don't have to calculate the width of everything manually
         if (position.getLastMove() != null) {
             addMove(position.getBackPosition(), position.getLastMove(), showMoveNumber, level, inlineVariation, true);
             showMoveNumber = false;
@@ -435,6 +451,135 @@ public class Controller implements Initializable {
         log.debug("done in " + (stop-start) + " ms");
     }
 
+    private void drawGameHeader() {
+        drawGameHeaderFirstRow();
+        drawGameHeaderSecondRow();
+    }
+
+    private void drawGameHeaderFirstRow() {
+        playerNames.getChildren().clear();
+        try {
+            String white = gameHeader.getWhitePlayerString();
+            String black = gameHeader.getBlackPlayerString();
+            int whiteRating = gameHeader.getWhiteElo();
+            int blackRating = gameHeader.getBlackElo();
+            String result;
+
+            switch (gameHeader.getResult()) {
+                case WhiteWon:
+                case WhiteWonOnForfeit:
+                    result = "1-0";
+                    break;
+                case Draw:
+                case DrawOnForfeit:
+                    result = "½-½";
+                    break;
+                case BlackWon:
+                case BlackWonOnForfeit:
+                    result = "0-1";
+                    break;
+                default:
+                    result = "";
+            }
+
+            if (white.length() > 0) {
+                Text txtWhite = new Text(white);
+                txtWhite.getStyleClass().add("player-name");
+                playerNames.getChildren().add(txtWhite);
+                if (whiteRating > 0) {
+                    txtWhite = new Text(" " + whiteRating);
+                    txtWhite.getStyleClass().add("player-rating");
+                    playerNames.getChildren().add(txtWhite);
+                }
+            }
+
+            if (white.length() > 0 && black.length() > 0) {
+                Text txtVs = new Text(" - ");
+                txtVs.getStyleClass().add("player-name");
+                playerNames.getChildren().add(txtVs);
+            }
+
+            if (black.length() > 0) {
+                Text txtBlack = new Text(black);
+                txtBlack.getStyleClass().add("player-name");
+                playerNames.getChildren().add(txtBlack);
+                if (blackRating > 0) {
+                    txtBlack = new Text(" " + blackRating);
+                    txtBlack.getStyleClass().add("player-rating");
+                    playerNames.getChildren().add(txtBlack);
+                }
+            }
+
+            if (result.length() > 0) {
+                Text txtResult = new Text(" " + result);
+                txtResult.getStyleClass().add("game-result");
+                playerNames.getChildren().add(txtResult);
+            }
+        } catch (IOException e) {
+            Text txtError = new Text("Failed to load player data");
+            txtError.getStyleClass().add("load-error");
+            playerNames.getChildren().add(txtError);
+        }
+    }
+
+    private void drawGameHeaderSecondRow() {
+        gameDetails.getChildren().clear();
+
+        try {
+            String eco = gameHeader.getECO();
+            String tournament = gameHeader.getTournamentString();
+            String annotator = gameHeader.getAnnotatorString();
+            int round = gameHeader.getRound();
+            int subRound = gameHeader.getSubRound();
+            Date playedDate = gameHeader.getPlayedDate();
+            String whiteTeam = gameHeader.getWhiteTeamString();
+            String blackTeam = gameHeader.getBlackTeamString();
+
+            if (eco.length() > 0) {
+                Text txtECO = new Text(eco + " ");
+                txtECO.getStyleClass().add("eco");
+                gameDetails.getChildren().add(txtECO);
+            }
+            if (tournament.length() > 0) {
+                Text txtTournament = new Text(tournament + " ");
+                txtTournament.getStyleClass().add("tournament");
+                gameDetails.getChildren().add(txtTournament);
+            }
+            if (whiteTeam.length() > 0 && blackTeam.length() > 0) {
+                Text txtTeams = new Text(String.format("[%s-%s] ", whiteTeam, blackTeam));
+                txtTeams.getStyleClass().add("team");
+                gameDetails.getChildren().add(txtTeams);
+            }
+            if (round > 0 || subRound > 0) {
+                String roundString;
+                if (round > 0 && subRound > 0) {
+                    roundString = String.format("(%d.%d)", round, subRound);
+                } else if (round > 0) {
+                    roundString = String.format("(%d)", round);
+                } else {
+                    roundString = String.format("(%d)", subRound);
+                }
+                Text txtRound = new Text(roundString + " ");
+                txtRound.getStyleClass().add("round");
+                gameDetails.getChildren().add(txtRound);
+            }
+            if (playedDate.toString().length() > 0) {
+                Text txtDate = new Text(playedDate.toString() + " ");
+                txtDate.getStyleClass().add("date");
+                gameDetails.getChildren().add(txtDate);
+            }
+            if (annotator.length() > 0) {
+                Text txtAnnotator = new Text(String.format("[%s]", annotator));
+                txtAnnotator.getStyleClass().add("annotator");
+                gameDetails.getChildren().add(txtAnnotator);
+            }
+        } catch (IOException | CBHException e) {
+            Text txtError = new Text("Failed to game details data");
+            txtError.getStyleClass().add("load-error");
+            gameDetails.getChildren().add(txtError);
+        }
+    }
+
     private void selectPosition(GamePosition position) {
         if (gameCursor != null) {
             // Deselect previous selection
@@ -471,6 +616,7 @@ public class Controller implements Initializable {
         movePane.prefWidthProperty().bind(rightSplitter.widthProperty());
         movePane.prefHeightProperty().bind(rightSplitter.heightProperty());
         moveBox.prefWidthProperty().bind(movePane.widthProperty().subtract(20)); // Compensate for vertical scrollbar
+        //notationBox.prefWidthProperty().bind(rightSplitter.widthProperty());
 
         moveBox.widthProperty().addListener(observable -> drawMoves());
 
@@ -487,7 +633,8 @@ public class Controller implements Initializable {
 
         try {
             Database db = Database.open(cbhFile);
-            this.gameHeader = db.getGameHeader(3);
+            this.gameHeader = db.getGameHeader(2);
+//            this.gameHeader.getWhitePlayerString()
             this.game = this.gameHeader.getGame();
             this.gameCursor = this.game;
         } catch (IOException e) {
@@ -498,6 +645,7 @@ public class Controller implements Initializable {
             throw new RuntimeException("Failed to load the game", e);
         }
 
+        drawGameHeader();
         drawMoves();
         drawBoard();
     }
