@@ -67,6 +67,7 @@ public class Controller implements Initializable {
     @FXML
     private VBox moveBox;
 
+    private GameHeader gameHeader;
     private AnnotatedGame game;
     private GamePosition gameCursor;
     private Map<GamePosition, MoveLabel> positionLabelMap = new HashMap<>();
@@ -424,6 +425,12 @@ public class Controller implements Initializable {
         addNewRow(0);
 
         generateMoveControls(game, true, 0, false, "");
+
+        addNewRow(0);
+        if (gameHeader.getResult() != GameResult.Line && gameHeader.getResult() != GameResult.BothLost) {
+            addText(gameHeader.getResultString(), 0, "main-line");
+        }
+
         long stop = System.currentTimeMillis();
         log.debug("done in " + (stop-start) + " ms");
     }
@@ -480,8 +487,8 @@ public class Controller implements Initializable {
 
         try {
             Database db = Database.open(cbhFile);
-            GameHeader gameHeader = db.getGameHeader(3);
-            this.game = gameHeader.getGame();
+            this.gameHeader = db.getGameHeader(3);
+            this.game = this.gameHeader.getGame();
             this.gameCursor = this.game;
         } catch (IOException e) {
             throw new RuntimeException("Failed to load the game", e);
