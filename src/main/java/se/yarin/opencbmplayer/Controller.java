@@ -4,6 +4,7 @@ import javafx.event.ActionEvent;
 import javafx.fxml.FXML;
 import javafx.fxml.Initializable;
 import javafx.geometry.Insets;
+import javafx.geometry.Point2D;
 import javafx.scene.Node;
 import javafx.scene.Scene;
 import javafx.scene.canvas.Canvas;
@@ -13,22 +14,23 @@ import javafx.scene.control.Label;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.control.SplitPane;
 import javafx.scene.image.Image;
+import javafx.scene.image.ImageView;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.TilePane;
 import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
+import javafx.scene.paint.Paint;
 import javafx.scene.shape.Rectangle;
 import javafx.scene.text.Text;
 import javafx.scene.text.TextFlow;
+import javafx.scene.transform.Affine;
+import javafx.scene.transform.Transform;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import yarin.cbhlib.*;
 import yarin.cbhlib.Date;
-import yarin.cbhlib.annotations.Annotation;
-import yarin.cbhlib.annotations.SymbolAnnotation;
-import yarin.cbhlib.annotations.TextAfterMoveAnnotation;
-import yarin.cbhlib.annotations.TextBeforeMoveAnnotation;
+import yarin.cbhlib.annotations.*;
 import yarin.cbhlib.exceptions.CBHException;
 import yarin.cbhlib.exceptions.CBHFormatException;
 import yarin.chess.GamePosition;
@@ -48,6 +50,10 @@ public class Controller implements Initializable {
 
     private final double BOARD_EDGE_SIZE = 0.15; // Size of board edge relative to the size of a square
     private final double MOVE_BOX_RIGHT_MARGIN = 25; // Compensate for the padding and some extra space to be safe
+
+    private final double GRAPHICAL_ARROW_OPACITY = 0.6;
+    private final double GRAPHICAL_SQUARE_OPACITY = 0.4;
+    private final int GRAPHICAL_COLOR_INTENSITY = 220;
 
     private double squareSize, boardSize, xMargin, yMargin, edgeSize;
 
@@ -78,9 +84,6 @@ public class Controller implements Initializable {
     @FXML
     private TextFlow gameDetails;
 
-    @FXML
-    private Text whitePlayerName;
-
 
     private GameHeader gameHeader;
     private AnnotatedGame game;
@@ -97,6 +100,12 @@ public class Controller implements Initializable {
         xMargin = (w - boardSize) / 2;
         yMargin = (h - boardSize) / 2;
         edgeSize = BOARD_EDGE_SIZE * squareSize;
+    }
+
+    private Point2D getSquareMidpoint(int x, int y) {
+        return new Point2D(
+                xMargin + squareSize * (x + BOARD_EDGE_SIZE) + squareSize / 2,
+                yMargin + squareSize * (7 - y + BOARD_EDGE_SIZE) + squareSize / 2);
     }
 
     private Rectangle getSquareRect(int x, int y) {
@@ -139,22 +148,109 @@ public class Controller implements Initializable {
 
         for (int y = 0; y < 8; y++) {
             for (int x = 0; x < 8; x++) {
+                Rectangle sq = getSquareRect(x, y);
                 if ((x+y)%2 == 0) {
-                    Rectangle sq = getSquareRect(x, y);
                     gc.setFill(Color.rgb(139, 69, 19, 0.6));
 //                    gc.setFill(Color.rgb(160, 82, 45, 0.6));
                     gc.fillRect(sq.getX(), sq.getY(), sq.getWidth(), sq.getHeight());
                 }
-                //gc.setGlobalBlendMode(BlendMode.ADD);
+            }
+        }
 
+        drawGraphicalSquares(gc);
+
+        for (int y = 0; y < 8; y++) {
+            for (int x = 0; x < 8; x++) {
                 Piece piece = gameCursor.getPosition().pieceAt(y, x);
-
                 drawPiece(gc, x, y, piece);
             }
         }
 
+        drawGraphicalArrows(gc);
+
         long stop = System.currentTimeMillis();
         log.debug("done in " + (stop-start) + " ms");
+    }
+
+    private void drawGraphicalSquares(GraphicsContext gc) {
+        GraphicalSquaresAnnotation gsa = game.getAnnotation(gameCursor, GraphicalSquaresAnnotation.class);
+        if (gsa == null) {
+            return;
+        }
+        for (GraphicalSquaresAnnotation.GraphicalSquare gsq : gsa.getSquares()) {
+            int xy = gsq.getSquare();
+            int x = xy / 8, y = xy % 8;
+            Paint p;
+            switch (gsq.getColor()) {
+                case GREEN:
+                    p = Color.rgb(255-GRAPHICAL_COLOR_INTENSITY, GRAPHICAL_COLOR_INTENSITY, 255-GRAPHICAL_COLOR_INTENSITY, GRAPHICAL_SQUARE_OPACITY);
+                    break;
+                case YELLOW:
+                    p = Color.rgb(GRAPHICAL_COLOR_INTENSITY, GRAPHICAL_COLOR_INTENSITY, 255-GRAPHICAL_COLOR_INTENSITY, GRAPHICAL_SQUARE_OPACITY);
+                    break;
+                case RED:
+                    p = Color.rgb(GRAPHICAL_COLOR_INTENSITY, 255-GRAPHICAL_COLOR_INTENSITY, 255-GRAPHICAL_COLOR_INTENSITY, GRAPHICAL_SQUARE_OPACITY);
+                    break;
+                default:
+                    continue;
+            }
+            gc.setFill(p);
+            Rectangle sq = getSquareRect(x, y);
+            gc.fillRect(sq.getX(), sq.getY(), sq.getWidth(), sq.getHeight());
+        }
+    }
+
+    private void drawGraphicalArrows(GraphicsContext gc) {
+        GraphicalArrowsAnnotation gsa = game.getAnnotation(gameCursor, GraphicalArrowsAnnotation.class);
+        if (gsa == null) {
+            return;
+        }
+        for (GraphicalArrowsAnnotation.GraphicalArrow ga : gsa.getArrows()) {
+            int src = ga.getFromSquare(), dest = ga.getToSquare();
+            int x1 = src / 8, y1 = src % 8, x2 = dest / 8, y2 = dest % 8;
+            Paint p;
+            switch (ga.getColor()) {
+                case GREEN:
+                    p = Color.rgb(255-GRAPHICAL_COLOR_INTENSITY, GRAPHICAL_COLOR_INTENSITY, 255-GRAPHICAL_COLOR_INTENSITY, GRAPHICAL_ARROW_OPACITY);
+                    break;
+                case YELLOW:
+                    p = Color.rgb(GRAPHICAL_COLOR_INTENSITY, GRAPHICAL_COLOR_INTENSITY, 255-GRAPHICAL_COLOR_INTENSITY, GRAPHICAL_ARROW_OPACITY);
+                    break;
+                case RED:
+                    p = Color.rgb(GRAPHICAL_COLOR_INTENSITY, 255-GRAPHICAL_COLOR_INTENSITY, 255-GRAPHICAL_COLOR_INTENSITY, GRAPHICAL_ARROW_OPACITY);
+                    break;
+                default:
+                    continue;
+            }
+            gc.setFill(p);
+            Point2D p1 = getSquareMidpoint(x1, y1);
+            Point2D p2 = getSquareMidpoint(x2, y2);
+            drawArrow(gc, p1.getX(), p1.getY(), p2.getX(), p2.getY(), p);
+        }
+    }
+
+    void drawArrow(GraphicsContext gc, double x1, double y1, double x2, double y2, Paint color) {
+        gc.setFill(color);
+
+        double dx = x2 - x1, dy = y2 - y1;
+        double angle = Math.atan2(dy, dx);
+        double len = Math.sqrt(dx * dx + dy * dy);
+
+        Transform transform = Transform.translate(x1, y1);
+        transform = transform.createConcatenation(Transform.rotate(Math.toDegrees(angle), 0, 0));
+        gc.setTransform(new Affine(transform));
+
+        double arrowStart = squareSize * 0.05;
+        double arrowLength = len - squareSize * 0.2;
+        double arrowHeadWidth  = squareSize * 0.22;
+        double arrowHeadHeight = squareSize * 0.45;
+        double arrowHeadHeight2 = arrowHeadHeight * 0.8;
+        double arrowWidth = squareSize * 0.05;
+        gc.fillPolygon(
+                new double[] {arrowLength, arrowLength - arrowHeadHeight, arrowLength - arrowHeadHeight2, arrowStart, arrowStart, arrowLength - arrowHeadHeight2, arrowLength-arrowHeadHeight, arrowLength},
+                new double[] {0, -arrowHeadWidth, -arrowWidth, -arrowWidth, arrowWidth, arrowWidth, arrowHeadWidth, 0},
+                8);
+        gc.setTransform(new Affine());
     }
 
     private void drawPiece(GraphicsContext gc, int x, int y, Piece piece) {
@@ -213,12 +309,21 @@ public class Controller implements Initializable {
         return width;
     }
 
-    private void addControl(Control control, int level, double leftPadding, double rightPadding, String... styleClass) {
-        control.getStyleClass().addAll(styleClass);
+    private void addImage(Image image) {
+        // TODO: This is ugly (and not correct), should be same method as addControl if possible to avoid code duplication.
 
-        if (!(control instanceof Label)) throw new RuntimeException("Not supported yet");
-        double width = getLabelWidth((Label) control);
-        boolean singleCharacter = ((Label) control).getText().length() == 1;
+        double width = image.getWidth();
+
+        currentRow.getChildren().add(new ImageView(image));
+        currentRowWidth += width;
+    }
+
+    private void addControl(Control node, int level, double leftPadding, double rightPadding, String... styleClass) {
+        node.getStyleClass().addAll(styleClass);
+
+        if (!(node instanceof Label)) throw new RuntimeException("Not supported yet");
+        double width = getLabelWidth((Label) node);
+        boolean singleCharacter = ((Label) node).getText().length() == 1;
 //        log.debug(((Label) control).getText() + " " + leftPadding + " " + currentRow.getChildren().size());
 
 //        log.debug("currentRowWidth = " + currentRowWidth + ", controlWidth = " + width + ", moveBox width = " + moveBox.getWidth());
@@ -246,8 +351,8 @@ public class Controller implements Initializable {
             leftPadding = 0;
         }
 
-        control.setPadding(new Insets(0, rightPadding, 0, leftPadding));
-        currentRow.getChildren().add(control);
+        node.setPadding(new Insets(0, rightPadding, 0, leftPadding));
+        currentRow.getChildren().add(node);
         currentRowWidth += width + leftPadding + rightPadding;
     }
 
@@ -289,68 +394,87 @@ public class Controller implements Initializable {
         addText(text, level, 0.0, 0.0, styleClass);
     }
 
-    private void addMove(GamePosition preNode, Move move,
-                         boolean showMoveNumber, int level, boolean inlineVariation,
-                         boolean headOfVariation) {
-        GamePosition postNode = preNode.getForwardPosition(move);
-
-        String beforeMoveText = null, afterMoveText = null;
+    private void addPreMoveAnnotations(GamePosition node, int level) {
         // TODO: This won't work properly in case of multiple languages
-        TextBeforeMoveAnnotation beforeMoveAnnotation = game.getAnnotation(postNode, TextBeforeMoveAnnotation.class);
-        if (beforeMoveAnnotation != null) beforeMoveText = beforeMoveAnnotation.getText();
-        TextAfterMoveAnnotation afterMoveAnnotation = game.getAnnotation(postNode, TextAfterMoveAnnotation.class);
-        if (afterMoveAnnotation != null) afterMoveText = afterMoveAnnotation.getText();
-        // This assumes there can only be on symbol annotation per move
-        SymbolAnnotation symbols = game.getAnnotation(postNode, SymbolAnnotation.class);
-        MovePrefix movePrefix = symbols == null ? MovePrefix.Nothing : symbols.getMovePrefix();
-        MoveComment moveComment = symbols == null ? MoveComment.Nothing : symbols.getMoveComment();
-        LineEvaluation lineEvaluation = symbols == null ? LineEvaluation.NoEvaluation : symbols.getPositionEval();
+        TextBeforeMoveAnnotation beforeMoveAnnotation = game.getAnnotation(node, TextBeforeMoveAnnotation.class);
+        if (beforeMoveAnnotation != null) {
+            addText(beforeMoveAnnotation.getText(), level, "comment-label");
+        }
+    }
 
-        // Add before-move text
-        if (beforeMoveText != null) {
-            addText(beforeMoveText, level, "comment-label");
+    private void addPostMoveAnnotations(GamePosition node, int level) {
+        boolean hasGraphicalAnnotations = game.getAnnotation(node, GraphicalArrowsAnnotation.class) != null ||
+                game.getAnnotation(node, GraphicalSquaresAnnotation.class) != null;
+        if (hasGraphicalAnnotations) {
+            addImage(new Image("images/graphical-annotation.png", 16, 16, true, true));
         }
 
-        // Add move, symbols and move number
-        MoveLabel lbl = new MoveLabel(move, postNode);
-        String moveText = movePrefix.getSymbol();
-        if (showMoveNumber || preNode.getPlayerToMove() == Piece.PieceColor.WHITE) {
-            moveText += String.format("%d.", preNode.getMoveNumber());
-            if (preNode.getPlayerToMove() == Piece.PieceColor.BLACK) moveText += "..";
+        // TODO: This won't work properly in case of multiple languages
+        TextAfterMoveAnnotation afterMoveAnnotation = game.getAnnotation(node, TextAfterMoveAnnotation.class);
+        if (afterMoveAnnotation != null) {
+            addText(afterMoveAnnotation.getText(), level, "comment-label");
+        }
+    }
+
+    /**
+     * Output the last move made with annotations
+     * @param node the position after the last move (can be the start position)
+     */
+    private void addMove(GamePosition node,
+                         boolean showMoveNumber,
+                         int level,
+                         boolean inlineVariation,
+                         boolean headOfVariation) {
+        Move move = node.getLastMove();
+        addPreMoveAnnotations(node, level);
+
+        // Move is null if node is the start position of the game
+        if (move != null) {
+            // This assumes there can only be on symbol annotation per move
+            SymbolAnnotation symbols = game.getAnnotation(node, SymbolAnnotation.class);
+            MovePrefix movePrefix = symbols == null ? MovePrefix.Nothing : symbols.getMovePrefix();
+            MoveComment moveComment = symbols == null ? MoveComment.Nothing : symbols.getMoveComment();
+            LineEvaluation lineEvaluation = symbols == null ? LineEvaluation.NoEvaluation : symbols.getPositionEval();
+
+            // Add move, symbols and move number
+            MoveLabel lbl = new MoveLabel(move, node);
+            String moveText = movePrefix.getSymbol();
+            Piece.PieceColor moveColor = node.getBackPosition().getPlayerToMove();
+            if (showMoveNumber || moveColor == Piece.PieceColor.WHITE) {
+                moveText += String.format("%d.", node.getBackPosition().getMoveNumber());
+                if (moveColor == Piece.PieceColor.BLACK) moveText += "..";
+            }
+
+            moveText += move.toString(node.getBackPosition().getPosition());
+            moveText += moveComment.getSymbol();
+            moveText += lineEvaluation.getSymbol();
+
+            lbl.setText(moveText);
+            lbl.setOnMouseClicked(Controller.this::handleMoveSelected);
+            List<String> styles = new ArrayList<>();
+            double leftPadding = 4, rightPadding = 4;
+            if (headOfVariation && game.getAnnotation(node, TextBeforeMoveAnnotation.class) == null) {
+                leftPadding = 0;
+            }
+            if (node.isEndOfVariation() && game.getAnnotation(node, TextAfterMoveAnnotation.class) == null) {
+                rightPadding = 0;
+            }
+            if (level == 0) {
+                styles.add("main-line");
+            } else if (inlineVariation) {
+                styles.add("last-line");
+            }
+            if (headOfVariation && !inlineVariation && level > 1) {
+                styles.add("variation-head");
+                leftPadding = 4;
+            }
+
+            lbl.getStyleClass().addAll(styles);
+            positionLabelMap.put(node, lbl);
+            addControl(lbl, level, leftPadding, rightPadding);
         }
 
-        moveText += move.toString(preNode.getPosition());
-        moveText += moveComment.getSymbol();
-        moveText += lineEvaluation.getSymbol();
-
-        lbl.setText(moveText);
-        lbl.setOnMouseClicked(Controller.this::handleMoveSelected);
-        List<String> styles = new ArrayList<>();
-        double leftPadding = 4, rightPadding = 4;
-        if (headOfVariation && beforeMoveText == null) {
-            leftPadding = 0;
-        }
-        if (postNode.isEndOfVariation() && afterMoveText == null) {
-            rightPadding = 0;
-        }
-        if (level == 0) {
-            styles.add("main-line");
-        } else if (inlineVariation) {
-            styles.add("last-line");
-        }
-        if (headOfVariation && !inlineVariation && level > 1) {
-            styles.add("variation-head");
-            leftPadding = 4;
-        }
-
-        lbl.getStyleClass().addAll(styles);
-        positionLabelMap.put(postNode, lbl);
-        addControl(lbl, level, leftPadding, rightPadding);
-
-        // Add after-move text
-        if (afterMoveText != null) {
-            addText(afterMoveText, level, "comment-label");
-        }
+        addPostMoveAnnotations(node, level);
     }
 
     private boolean allVariationsAreSingleLine(GamePosition position) {
@@ -364,21 +488,21 @@ public class Controller implements Initializable {
                                       int level, boolean inlineVariation, String linePrefix) {
         // TODO: Try and make this cleaner by using TextFlow, so we don't have to calculate the width of everything manually
         if (position.getLastMove() != null) {
-            addMove(position.getBackPosition(), position.getLastMove(), showMoveNumber, level, inlineVariation, true);
+            addMove(position, showMoveNumber, level, inlineVariation, true);
             showMoveNumber = false;
         }
 
         while (!position.isEndOfVariation()) {
             List<Move> moves = position.getMoves();
             if (moves.size() == 1) {
-                addMove(position, position.getMainMove(), showMoveNumber, level, inlineVariation, false);
+                addMove(position.getForwardPosition(), showMoveNumber, level, inlineVariation, false);
                 showMoveNumber = false;
             } else {
                 if (inlineVariation) throw new RuntimeException("Found variations in an inline variation");
                 if (level == 0) {
                     // Show main move on existing line, but then one new paragraph per sub-line,
                     // each paragraph starting with [ and ending with ]
-                    addMove(position, position.getMainMove(), showMoveNumber, level, false, false);
+                    addMove(position.getForwardPosition(), showMoveNumber, level, false, false);
 
                     for (int i = 1; i < moves.size(); i++) {
                         addNewRow(level + 1);
@@ -391,7 +515,7 @@ public class Controller implements Initializable {
                     showMoveNumber = true;
                 } else if (allVariationsAreSingleLine(position)) {
                     // Show the alternatives inline, within () and separated by ;
-                    addMove(position, position.getMainMove(), showMoveNumber, level, false, false);
+                    addMove(position.getForwardPosition(), showMoveNumber, level, false, false);
 
                     addText("(", level, 6.0, 0.0, "last-line");
                     pullDownLastIfEOL = true;
@@ -440,11 +564,16 @@ public class Controller implements Initializable {
         moveBox.getChildren().clear();
         addNewRow(0);
 
+        addMove(game, false, 0, false, false);
         generateMoveControls(game, true, 0, false, "");
 
         addNewRow(0);
         if (gameHeader.getResult() != GameResult.Line && gameHeader.getResult() != GameResult.BothLost) {
             addText(gameHeader.getResultString(), 0, "main-line");
+        }
+
+        if (gameCursor != null) {
+            selectPosition(gameCursor);
         }
 
         long stop = System.currentTimeMillis();
@@ -633,8 +762,7 @@ public class Controller implements Initializable {
 
         try {
             Database db = Database.open(cbhFile);
-            this.gameHeader = db.getGameHeader(2);
-//            this.gameHeader.getWhitePlayerString()
+            this.gameHeader = db.getGameHeader(7);
             this.game = this.gameHeader.getGame();
             this.gameCursor = this.game;
         } catch (IOException e) {
