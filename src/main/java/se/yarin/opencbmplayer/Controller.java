@@ -89,6 +89,7 @@ public class Controller implements Initializable {
     private AnnotatedGame game;
     private GamePosition gameCursor;
     private Map<GamePosition, MoveLabel> positionLabelMap = new HashMap<>();
+    private boolean gameHasVariations; // TODO: This should be in the game model
 
     public Controller() {
     }
@@ -461,7 +462,7 @@ public class Controller implements Initializable {
             if (node.isEndOfVariation() && game.getAnnotation(node, TextAfterMoveAnnotation.class) == null) {
                 rightPadding = 0;
             }
-            if (level == 0) {
+            if (level == 0 && this.gameHasVariations) {
                 styles.add("main-line");
             } else if (inlineVariation) {
                 styles.add("last-line");
@@ -471,6 +472,7 @@ public class Controller implements Initializable {
                 leftPadding = 4;
             }
             if (criticalPosition != null) {
+                // TODO: These styles don't look as nice when the move is the selected move
                 switch (criticalPosition.getType()) {
                     case OPENING:
                         styles.add("critical-opening-position");
@@ -786,6 +788,17 @@ public class Controller implements Initializable {
             throw new RuntimeException("Failed to load the game", e);
         } catch (CBHException e) {
             throw new RuntimeException("Failed to load the game", e);
+        }
+
+        // Figure out if the game has any variations at all
+        GamePosition cur = this.game;
+        this.gameHasVariations = false;
+
+        while (!cur.isEndOfVariation() && !this.gameHasVariations) {
+            if (cur.getMoves().size() > 1) {
+                this.gameHasVariations = true;
+            }
+            cur = cur.getForwardPosition();
         }
 
         drawGameHeader();
