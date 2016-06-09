@@ -64,3 +64,15 @@
     -fx-padding: 0px 0px 0px 0px;
     -fx-text-fill: darkblue;
 }
+
+#moveBox .critical-opening-position {
+    -fx-text-fill: blue;
+}
+
+#moveBox .critical-middlegame-position {
+    -fx-text-fill: red;
+}
+
+#moveBox .critical-endgame-position {
+    -fx-text-fill: green;
+}

@@ -436,6 +436,8 @@ public class Controller implements Initializable {
             MoveComment moveComment = symbols == null ? MoveComment.Nothing : symbols.getMoveComment();
             LineEvaluation lineEvaluation = symbols == null ? LineEvaluation.NoEvaluation : symbols.getPositionEval();
 
+            CriticalPositionAnnotation criticalPosition = game.getAnnotation(node, CriticalPositionAnnotation.class);
+
             // Add move, symbols and move number
             MoveLabel lbl = new MoveLabel(move, node);
             String moveText = movePrefix.getSymbol();
@@ -467,6 +469,19 @@ public class Controller implements Initializable {
             if (headOfVariation && !inlineVariation && level > 1) {
                 styles.add("variation-head");
                 leftPadding = 4;
+            }
+            if (criticalPosition != null) {
+                switch (criticalPosition.getType()) {
+                    case OPENING:
+                        styles.add("critical-opening-position");
+                        break;
+                    case MIDDLEGAME:
+                        styles.add("critical-middlegame-position");
+                        break;
+                    case ENDGAME:
+                        styles.add("critical-endgame-position");
+                        break;
+                }
             }
 
             lbl.getStyleClass().addAll(styles);
@@ -762,7 +777,7 @@ public class Controller implements Initializable {
 
         try {
             Database db = Database.open(cbhFile);
-            this.gameHeader = db.getGameHeader(7);
+            this.gameHeader = db.getGameHeader(8);
             this.game = this.gameHeader.getGame();
             this.gameCursor = this.game;
         } catch (IOException e) {
