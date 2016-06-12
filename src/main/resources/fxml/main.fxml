@@ -11,6 +11,8 @@
 <?import javafx.scene.text.Text?>
 <?import javafx.scene.text.TextFlow?>
 <?import javafx.scene.control.Slider?>
+<?import javafx.scene.layout.Pane?>
+<?import javafx.scene.image.ImageView?>
 <StackPane fx:controller="se.yarin.opencbmplayer.Controller" xmlns:fx="http://javafx.com/fxml" stylesheets="/styles/styles.css">
     <SplitPane fx:id="leftSplitter" orientation="HORIZONTAL" dividerPositions="0.6">
         <TilePane fx:id="leftPane" alignment="CENTER">
@@ -19,12 +21,13 @@
         <SplitPane fx:id="rightSplitter" orientation="VERTICAL" dividerPositions="0.5" prefHeight="400">
             <!--<Button fx:id="reloadBtn" onAction="#reloadGame">Reload</Button>-->
             <VBox fx:id="videoBox">
-                <Label maxHeight="100">Video here</Label>
+                <Pane fx:id="playerHolder">
+                    <ImageView fx:id="videoImage" fitWidth="300" fitHeight="200"></ImageView>
+                </Pane>
                 <HBox>
                     <Label fx:id="currentTime" prefWidth="60"></Label>
                     <Slider fx:id="slider"></Slider>
                 </HBox>
-
             </VBox>
             <VBox fx:id="notationBox">
                 <TextFlow fx:id="playerNames" textAlignment="CENTER">

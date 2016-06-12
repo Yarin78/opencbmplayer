@@ -2,6 +2,7 @@ package se.yarin.opencbmplayer;
 
 import de.codecentric.centerdevice.javafxsvg.SvgImageLoaderFactory;
 import javafx.application.Application;
+import javafx.application.Platform;
 import javafx.event.EventHandler;
 import javafx.fxml.FXMLLoader;
 import javafx.scene.Parent;
@@ -26,6 +27,12 @@ public class Main extends Application {
 
         primaryStage.setTitle("ChessBase Media Player");
         primaryStage.setScene(new Scene(root, 800, 600));
+
+        primaryStage.setOnCloseRequest(event -> {
+            Platform.exit();
+            System.exit(0);
+        });
+
         primaryStage.show();
     }
 

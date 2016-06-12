@@ -1,5 +1,8 @@
 package se.yarin.opencbmplayer;
 
+import javafx.application.Platform;
+import javafx.beans.property.FloatProperty;
+import javafx.beans.property.SimpleFloatProperty;
 import javafx.beans.value.ChangeListener;
 import javafx.beans.value.ObservableValue;
 import javafx.event.ActionEvent;
@@ -13,10 +16,10 @@ import javafx.scene.Scene;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.control.*;
-import javafx.scene.image.Image;
-import javafx.scene.image.ImageView;
+import javafx.scene.image.*;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.HBox;
+import javafx.scene.layout.Pane;
 import javafx.scene.layout.TilePane;
 import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
@@ -29,6 +32,8 @@ import javafx.scene.transform.Transform;
 import javafx.util.StringConverter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import uk.co.caprica.vlcj.component.DirectMediaPlayerComponent;
+import uk.co.caprica.vlcj.player.direct.DirectMediaPlayer;
 import yarin.cbhlib.*;
 import yarin.cbhlib.Date;
 import yarin.cbhlib.actions.RecordedAction;
@@ -41,6 +46,7 @@ import yarin.chess.*;
 import java.io.File;
 import java.io.IOException;
 import java.net.URL;
+import java.nio.ByteBuffer;
 import java.util.*;
 
 public class Controller implements Initializable {
@@ -56,6 +62,8 @@ public class Controller implements Initializable {
     private final double GRAPHICAL_ARROW_OPACITY = 0.6;
     private final double GRAPHICAL_SQUARE_OPACITY = 0.4;
     private final int GRAPHICAL_COLOR_INTENSITY = 220;
+    private final int VLC_RENDER_WIDTH = 300;
+    private final int VLC_RENDER_HEIGHT = 200;
 
     private double squareSize, boardSize, xMargin, yMargin, edgeSize;
 
@@ -71,6 +79,12 @@ public class Controller implements Initializable {
     @FXML private TextFlow gameDetails;
     @FXML private Slider slider;
     @FXML private Label currentTime;
+    @FXML private ImageView videoImage;
+    @FXML private Pane playerHolder;
+
+    private CanvasPlayerComponent mediaPlayerComponent;
+    private Timer videoTimer;
+    private int lastEventTime;
 
     private GameMetaData gameHeader;
     private AnnotatedGame game;
@@ -711,14 +725,12 @@ public class Controller implements Initializable {
 
     @Override
     public void initialize(URL location, ResourceBundle resources) {
-//        reloadGame(null);
-        reloadVideo();
-
         board.widthProperty().bind(leftPane.widthProperty().subtract(20));
         board.heightProperty().bind(leftPane.heightProperty().subtract(20));
 
         movePane.prefWidthProperty().bind(rightSplitter.widthProperty());
-        movePane.prefHeightProperty().bind(rightSplitter.heightProperty());
+//        movePane.prefHeightProperty().bind(rightSplitter.heightProperty());
+        videoBox.prefHeightProperty().bind(rightSplitter.heightProperty());
         moveBox.prefWidthProperty().bind(movePane.widthProperty().subtract(20)); // Compensate for vertical scrollbar
         //notationBox.prefWidthProperty().bind(rightSplitter.widthProperty());
 
@@ -729,14 +741,60 @@ public class Controller implements Initializable {
         board.widthProperty().addListener(observable -> drawBoard());
         board.heightProperty().addListener(observable -> drawBoard());
 
+        videoImage.setImage(new WritableImage(VLC_RENDER_WIDTH, VLC_RENDER_HEIGHT));
+        mediaPlayerComponent = new CanvasPlayerComponent(VLC_RENDER_WIDTH, VLC_RENDER_HEIGHT, (WritableImage) videoImage.getImage());
+
+        playerHolder.prefWidthProperty().bind(videoBox.widthProperty());
+        playerHolder.prefHeightProperty().bind(videoBox.heightProperty().subtract(40)); // Compensate for slider underneath
+
+        playerHolder.widthProperty().addListener((observable, oldValue, newValue) -> {
+            fitImageViewSize(newValue.floatValue(), (float) playerHolder.getHeight());
+        });
+
+        playerHolder.heightProperty().addListener((observable, oldValue, newValue) -> {
+            fitImageViewSize((float) playerHolder.getWidth(), newValue.floatValue());
+        });
+
+        mediaPlayerComponent.getVideoSourceRatioProperty().addListener((observable, oldValue, newValue) -> {
+            fitImageViewSize((float) playerHolder.getWidth(), (float) playerHolder.getHeight());
+        });
+
+//        reloadGame(null);
+        reloadVideo();
+    }
+
+    private void fitImageViewSize(float width, float height) {
+        Platform.runLater(() -> {
+            float fitHeight = mediaPlayerComponent.getVideoSourceRatioProperty().get() * width;
+            if (fitHeight > height) {
+                videoImage.setFitHeight(height);
+                double fitWidth = height / mediaPlayerComponent.getVideoSourceRatioProperty().get();
+                videoImage.setFitWidth(fitWidth);
+                videoImage.setX((width - fitWidth) / 2);
+                videoImage.setY(0);
+            } else {
+                videoImage.setFitWidth(width);
+                videoImage.setFitHeight(fitHeight);
+                videoImage.setY((height - fitHeight) / 2);
+                videoImage.setX(0);
+            }
+        });
     }
 
     public void updateVideoPosition(int time) {
+        // TODO: This will be a race condition with the timer. It needs to be paused.
         GameModel newModel = recordedGame.getGameModelAt(time);
         this.gameHeader = newModel.getHeader();
         this.game = (AnnotatedGame) newModel.getGame(); // TODO: ugly... please fix
         this.gameCursor = newModel.getSelectedMove();
+        lastEventTime = time;
         this.currentTime.setText(String.format("%d:%02d", time/1000/60, time/1000%60));
+        DirectMediaPlayer mp = mediaPlayerComponent.getMediaPlayer();
+
+        if (!mp.isPlaying()) {
+            mp.start();
+        }
+        mp.setTime(time);
 
         drawGameHeader();
         drawMoves();
@@ -745,6 +803,7 @@ public class Controller implements Initializable {
 
     public void reloadVideo() {
         String mediaFile = "/Users/yarin/chessbasemedia/mediafiles/TEXT/Ari Ziegler - French Defence/2.wmv";
+        mediaPlayerComponent.getMediaPlayer().prepareMedia(mediaFile);
         try {
             this.recordedGame = RecordedGame.load(new File(mediaFile));
 
@@ -775,6 +834,33 @@ public class Controller implements Initializable {
         } catch (IOException | CBMException e) {
             throw new RuntimeException("Failed to load the media", e);
         }
+
+        this.videoTimer = new Timer("videoTimer");
+        this.videoTimer.scheduleAtFixedRate(new TimerTask() {
+            @Override
+            public void run() {
+                int curTime = (int) mediaPlayerComponent.getMediaPlayer().getTime();
+                log.info("Video at " + curTime);
+
+                // TODO: Ugly, fix
+                GameModel currentModel = new GameModel(game, gameHeader, gameCursor);
+                int actionsApplied = recordedGame.applyActionsBetween(currentModel, lastEventTime, curTime);
+                lastEventTime = curTime;
+                if (actionsApplied > 0) {
+                    game = (AnnotatedGame) currentModel.getGame();
+                    gameHeader = currentModel.getHeader();
+                    gameCursor = currentModel.getSelectedMove();
+
+                    Platform.runLater(() -> {
+                        drawBoard();
+                        drawMoves();
+                        drawGameHeader();
+                        selectPosition(gameCursor);
+                    });
+                }
+            }
+        }, 1000, 1000);
+
 
         updateVideoPosition(0);
     }
