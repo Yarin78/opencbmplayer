@@ -1,6 +1,9 @@
 package se.yarin.opencbmplayer;
 
+import javafx.beans.value.ChangeListener;
+import javafx.beans.value.ObservableValue;
 import javafx.event.ActionEvent;
+import javafx.event.Event;
 import javafx.fxml.FXML;
 import javafx.fxml.Initializable;
 import javafx.geometry.Insets;
@@ -9,10 +12,7 @@ import javafx.scene.Node;
 import javafx.scene.Scene;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
-import javafx.scene.control.Control;
-import javafx.scene.control.Label;
-import javafx.scene.control.ScrollPane;
-import javafx.scene.control.SplitPane;
+import javafx.scene.control.*;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.scene.input.MouseEvent;
@@ -26,17 +26,19 @@ import javafx.scene.text.Text;
 import javafx.scene.text.TextFlow;
 import javafx.scene.transform.Affine;
 import javafx.scene.transform.Transform;
+import javafx.util.StringConverter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import yarin.cbhlib.*;
 import yarin.cbhlib.Date;
+import yarin.cbhlib.actions.RecordedAction;
 import yarin.cbhlib.annotations.*;
 import yarin.cbhlib.exceptions.CBHException;
 import yarin.cbhlib.exceptions.CBHFormatException;
-import yarin.chess.GamePosition;
-import yarin.chess.Move;
-import yarin.chess.Piece;
+import yarin.cbhlib.exceptions.CBMException;
+import yarin.chess.*;
 
+import java.io.File;
 import java.io.IOException;
 import java.net.URL;
 import java.util.*;
@@ -57,39 +59,24 @@ public class Controller implements Initializable {
 
     private double squareSize, boardSize, xMargin, yMargin, edgeSize;
 
-    @FXML
-    private Canvas board;
+    @FXML private Canvas board;
+    @FXML private TilePane leftPane;
+    @FXML private ScrollPane movePane;
+    @FXML private SplitPane leftSplitter;
+    @FXML private SplitPane rightSplitter;
+    @FXML private VBox moveBox;
+    @FXML private VBox notationBox;
+    @FXML private VBox videoBox;
+    @FXML private TextFlow playerNames;
+    @FXML private TextFlow gameDetails;
+    @FXML private Slider slider;
+    @FXML private Label currentTime;
 
-    @FXML
-    private TilePane leftPane;
-
-    @FXML
-    private ScrollPane movePane;
-
-    @FXML
-    private SplitPane leftSplitter;
-
-    @FXML
-    private SplitPane rightSplitter;
-
-    @FXML
-    private VBox moveBox;
-
-    @FXML
-    private VBox notationBox;
-
-    @FXML
-    private TextFlow playerNames;
-
-    @FXML
-    private TextFlow gameDetails;
-
-
-    private GameHeader gameHeader;
+    private GameMetaData gameHeader;
     private AnnotatedGame game;
     private GamePosition gameCursor;
+    private RecordedGame recordedGame;
     private Map<GamePosition, MoveLabel> positionLabelMap = new HashMap<>();
-    private boolean gameHasVariations; // TODO: This should be in the game model
 
     public Controller() {
     }
@@ -462,7 +449,7 @@ public class Controller implements Initializable {
             if (node.isEndOfVariation() && game.getAnnotation(node, TextAfterMoveAnnotation.class) == null) {
                 rightPadding = 0;
             }
-            if (level == 0 && this.gameHasVariations) {
+            if (level == 0 && !game.isSingleLine()) {
                 styles.add("main-line");
             } else if (inlineVariation) {
                 styles.add("last-line");
@@ -585,9 +572,8 @@ public class Controller implements Initializable {
         generateMoveControls(game, true, 0, false, "");
 
         addNewRow(0);
-        if (gameHeader.getResult() != GameResult.Line && gameHeader.getResult() != GameResult.BothLost) {
-            addText(gameHeader.getResultString(), 0, "main-line");
-        }
+        // TODO: This doesn't show correct (or at least not the same as CB) in case of forfeits etc
+        addText(gameHeader.getResult(), 0, "main-line");
 
         if (gameCursor != null) {
             selectPosition(gameCursor);
@@ -604,125 +590,96 @@ public class Controller implements Initializable {
 
     private void drawGameHeaderFirstRow() {
         playerNames.getChildren().clear();
-        try {
-            String white = gameHeader.getWhitePlayerString();
-            String black = gameHeader.getBlackPlayerString();
-            int whiteRating = gameHeader.getWhiteElo();
-            int blackRating = gameHeader.getBlackElo();
-            String result;
+        String white = gameHeader.getWhiteName();
+        String black = gameHeader.getBlackName();
+        int whiteRating = gameHeader.getWhiteElo();
+        int blackRating = gameHeader.getBlackElo();
+        String result = gameHeader.getResult();
 
-            switch (gameHeader.getResult()) {
-                case WhiteWon:
-                case WhiteWonOnForfeit:
-                    result = "1-0";
-                    break;
-                case Draw:
-                case DrawOnForfeit:
-                    result = "½-½";
-                    break;
-                case BlackWon:
-                case BlackWonOnForfeit:
-                    result = "0-1";
-                    break;
-                default:
-                    result = "";
-            }
-
-            if (white.length() > 0) {
-                Text txtWhite = new Text(white);
-                txtWhite.getStyleClass().add("player-name");
+        if (white.length() > 0) {
+            Text txtWhite = new Text(white);
+            txtWhite.getStyleClass().add("player-name");
+            playerNames.getChildren().add(txtWhite);
+            if (whiteRating > 0) {
+                txtWhite = new Text(" " + whiteRating);
+                txtWhite.getStyleClass().add("player-rating");
                 playerNames.getChildren().add(txtWhite);
-                if (whiteRating > 0) {
-                    txtWhite = new Text(" " + whiteRating);
-                    txtWhite.getStyleClass().add("player-rating");
-                    playerNames.getChildren().add(txtWhite);
-                }
             }
+        }
 
-            if (white.length() > 0 && black.length() > 0) {
-                Text txtVs = new Text(" - ");
-                txtVs.getStyleClass().add("player-name");
-                playerNames.getChildren().add(txtVs);
-            }
+        if (white.length() > 0 && black.length() > 0) {
+            Text txtVs = new Text(" - ");
+            txtVs.getStyleClass().add("player-name");
+            playerNames.getChildren().add(txtVs);
+        }
 
-            if (black.length() > 0) {
-                Text txtBlack = new Text(black);
-                txtBlack.getStyleClass().add("player-name");
+        if (black.length() > 0) {
+            Text txtBlack = new Text(black);
+            txtBlack.getStyleClass().add("player-name");
+            playerNames.getChildren().add(txtBlack);
+            if (blackRating > 0) {
+                txtBlack = new Text(" " + blackRating);
+                txtBlack.getStyleClass().add("player-rating");
                 playerNames.getChildren().add(txtBlack);
-                if (blackRating > 0) {
-                    txtBlack = new Text(" " + blackRating);
-                    txtBlack.getStyleClass().add("player-rating");
-                    playerNames.getChildren().add(txtBlack);
-                }
             }
+        }
 
-            if (result.length() > 0) {
-                Text txtResult = new Text(" " + result);
-                txtResult.getStyleClass().add("game-result");
-                playerNames.getChildren().add(txtResult);
-            }
-        } catch (IOException e) {
-            Text txtError = new Text("Failed to load player data");
-            txtError.getStyleClass().add("load-error");
-            playerNames.getChildren().add(txtError);
+        if (result.length() > 0) {
+            Text txtResult = new Text(" " + result);
+            txtResult.getStyleClass().add("game-result");
+            playerNames.getChildren().add(txtResult);
         }
     }
 
     private void drawGameHeaderSecondRow() {
         gameDetails.getChildren().clear();
 
-        try {
-            String eco = gameHeader.getECO();
-            String tournament = gameHeader.getTournamentString();
-            String annotator = gameHeader.getAnnotatorString();
-            int round = gameHeader.getRound();
-            int subRound = gameHeader.getSubRound();
-            Date playedDate = gameHeader.getPlayedDate();
-            String whiteTeam = gameHeader.getWhiteTeamString();
-            String blackTeam = gameHeader.getBlackTeamString();
+        String eco = gameHeader.getEco();
+        String tournament = gameHeader.getEventName();
+        String annotator = gameHeader.getAnnotator();
+        int round = gameHeader.getRound();
+        int subRound = gameHeader.getSubRound();
+        String playedDate = gameHeader.getPlayedDate();
+        String whiteTeam = gameHeader.getWhiteTeam();
+        String blackTeam = gameHeader.getBlackTeam();
 
-            if (eco.length() > 0) {
-                Text txtECO = new Text(eco + " ");
-                txtECO.getStyleClass().add("eco");
-                gameDetails.getChildren().add(txtECO);
+        if (eco.length() > 0) {
+            Text txtECO = new Text(eco + " ");
+            txtECO.getStyleClass().add("eco");
+            gameDetails.getChildren().add(txtECO);
+        }
+        if (tournament.length() > 0) {
+            Text txtTournament = new Text(tournament + " ");
+            txtTournament.getStyleClass().add("tournament");
+            gameDetails.getChildren().add(txtTournament);
+        }
+        if (whiteTeam.length() > 0 && blackTeam.length() > 0) {
+            Text txtTeams = new Text(String.format("[%s-%s] ", whiteTeam, blackTeam));
+            txtTeams.getStyleClass().add("team");
+            gameDetails.getChildren().add(txtTeams);
+        }
+        if (round > 0 || subRound > 0) {
+            String roundString;
+            if (round > 0 && subRound > 0) {
+                roundString = String.format("(%d.%d)", round, subRound);
+            } else if (round > 0) {
+                roundString = String.format("(%d)", round);
+            } else {
+                roundString = String.format("(%d)", subRound);
             }
-            if (tournament.length() > 0) {
-                Text txtTournament = new Text(tournament + " ");
-                txtTournament.getStyleClass().add("tournament");
-                gameDetails.getChildren().add(txtTournament);
-            }
-            if (whiteTeam.length() > 0 && blackTeam.length() > 0) {
-                Text txtTeams = new Text(String.format("[%s-%s] ", whiteTeam, blackTeam));
-                txtTeams.getStyleClass().add("team");
-                gameDetails.getChildren().add(txtTeams);
-            }
-            if (round > 0 || subRound > 0) {
-                String roundString;
-                if (round > 0 && subRound > 0) {
-                    roundString = String.format("(%d.%d)", round, subRound);
-                } else if (round > 0) {
-                    roundString = String.format("(%d)", round);
-                } else {
-                    roundString = String.format("(%d)", subRound);
-                }
-                Text txtRound = new Text(roundString + " ");
-                txtRound.getStyleClass().add("round");
-                gameDetails.getChildren().add(txtRound);
-            }
-            if (playedDate.toString().length() > 0) {
-                Text txtDate = new Text(playedDate.toString() + " ");
-                txtDate.getStyleClass().add("date");
-                gameDetails.getChildren().add(txtDate);
-            }
-            if (annotator.length() > 0) {
-                Text txtAnnotator = new Text(String.format("[%s]", annotator));
-                txtAnnotator.getStyleClass().add("annotator");
-                gameDetails.getChildren().add(txtAnnotator);
-            }
-        } catch (IOException | CBHException e) {
-            Text txtError = new Text("Failed to game details data");
-            txtError.getStyleClass().add("load-error");
-            gameDetails.getChildren().add(txtError);
+            Text txtRound = new Text(roundString + " ");
+            txtRound.getStyleClass().add("round");
+            gameDetails.getChildren().add(txtRound);
+        }
+        if (playedDate.toString().length() > 0) {
+            Text txtDate = new Text(playedDate.toString() + " ");
+            txtDate.getStyleClass().add("date");
+            gameDetails.getChildren().add(txtDate);
+        }
+        if (annotator.length() > 0) {
+            Text txtAnnotator = new Text(String.format("[%s]", annotator));
+            txtAnnotator.getStyleClass().add("annotator");
+            gameDetails.getChildren().add(txtAnnotator);
         }
     }
 
@@ -754,7 +711,8 @@ public class Controller implements Initializable {
 
     @Override
     public void initialize(URL location, ResourceBundle resources) {
-        reloadGame(null);
+//        reloadGame(null);
+        reloadVideo();
 
         board.widthProperty().bind(leftPane.widthProperty().subtract(20));
         board.heightProperty().bind(leftPane.heightProperty().subtract(20));
@@ -764,6 +722,8 @@ public class Controller implements Initializable {
         moveBox.prefWidthProperty().bind(movePane.widthProperty().subtract(20)); // Compensate for vertical scrollbar
         //notationBox.prefWidthProperty().bind(rightSplitter.widthProperty());
 
+        slider.prefWidthProperty().bind(videoBox.widthProperty().subtract(80));
+
         moveBox.widthProperty().addListener(observable -> drawMoves());
 
         board.widthProperty().addListener(observable -> drawBoard());
@@ -771,34 +731,72 @@ public class Controller implements Initializable {
 
     }
 
+    public void updateVideoPosition(int time) {
+        GameModel newModel = recordedGame.getGameModelAt(time);
+        this.gameHeader = newModel.getHeader();
+        this.game = (AnnotatedGame) newModel.getGame(); // TODO: ugly... please fix
+        this.gameCursor = newModel.getSelectedMove();
+        this.currentTime.setText(String.format("%d:%02d", time/1000/60, time/1000%60));
+
+        drawGameHeader();
+        drawMoves();
+        drawBoard();
+    }
+
+    public void reloadVideo() {
+        String mediaFile = "/Users/yarin/chessbasemedia/mediafiles/TEXT/Ari Ziegler - French Defence/2.wmv";
+        try {
+            this.recordedGame = RecordedGame.load(new File(mediaFile));
+
+            int duration = this.recordedGame.getLastEventTime();
+            this.slider.setMax(duration);
+            this.slider.setMajorTickUnit(120*1000);
+            this.slider.setShowTickMarks(true);
+            this.slider.setShowTickLabels(true);
+            this.slider.setLabelFormatter(new StringConverter<Double>() {
+                @Override
+                public String toString(Double value) {
+                    return String.format("%d:%02d", (int) Math.floor(value/1000)/60, (int) Math.floor(value/1000)%60);
+                }
+
+                @Override
+                public Double fromString(String string) {
+                    throw new RuntimeException("Not needed");
+                }
+            });
+
+            this.slider.valueProperty().addListener((observable, oldValue, newValue) -> {
+                log.debug("Value changing: " + this.slider.isValueChanging());
+                if (oldValue.equals(newValue)) return;
+                updateVideoPosition(newValue.intValue());
+            });
+
+            if (this.gameCursor == null) this.gameCursor = this.game;
+        } catch (IOException | CBMException e) {
+            throw new RuntimeException("Failed to load the media", e);
+        }
+
+        updateVideoPosition(0);
+    }
+
     public void reloadGame(ActionEvent actionEvent) {
         //        String cbhFile = "/Users/yarin/Dropbox/ChessBase/My Games/My White Openings.cbh";
 //        String cbhFile = "/Users/yarin/Dropbox/ChessBase/My Games/jimmy.cbh";
-//        String cbhFile = "/Users/yarin/src/cbhlib/src/test/java/yarin/cbhlib/databases/cbhlib_test.cbh";
-        String cbhFile = "/Users/yarin/src/opencbmplayer/src/main/resources/cbmplayertest.cbh";
+        String cbhFile = "/Users/yarin/src/cbhlib/src/test/java/yarin/cbhlib/databases/cbhlib_test.cbh";
+//        String cbhFile = "/Users/yarin/src/opencbmplayer/src/main/resources/cbmplayertest.cbh";
+
 
         try {
             Database db = Database.open(cbhFile);
-            this.gameHeader = db.getGameHeader(8);
-            this.game = this.gameHeader.getGame();
+            GameHeader header = db.getGameHeader(9);
+            this.gameHeader = header.toGameMetaData();
+            this.game = header.getGame();
             this.gameCursor = this.game;
-        } catch (IOException e) {
+        } catch (IOException | CBHException e) {
+            Text txtError = new Text("Failed to get game details");
+            txtError.getStyleClass().add("load-error");
+            gameDetails.getChildren().add(txtError);
             throw new RuntimeException("Failed to load the game", e);
-        } catch (CBHFormatException e) {
-            throw new RuntimeException("Failed to load the game", e);
-        } catch (CBHException e) {
-            throw new RuntimeException("Failed to load the game", e);
-        }
-
-        // Figure out if the game has any variations at all
-        GamePosition cur = this.game;
-        this.gameHasVariations = false;
-
-        while (!cur.isEndOfVariation() && !this.gameHasVariations) {
-            if (cur.getMoves().size() > 1) {
-                this.gameHasVariations = true;
-            }
-            cur = cur.getForwardPosition();
         }
 
         drawGameHeader();
