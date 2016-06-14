@@ -802,10 +802,11 @@ public class Controller implements Initializable {
     }
 
     public void reloadVideo() {
-        String mediaFile = "/Users/yarin/chessbasemedia/mediafiles/TEXT/Ari Ziegler - French Defence/2.wmv";
+//        String mediaFile = "/Users/yarin/chessbasemedia/mediafiles/TEXT/Ari Ziegler - French Defence/2.wmv";
+        String mediaFile = "/Users/yarin/chessbasemedia/mediafiles/TEXT/Garry Kasparov - Queens Gambit/3.wmv";
         mediaPlayerComponent.getMediaPlayer().prepareMedia(mediaFile);
         try {
-            this.recordedGame = RecordedGame.load(new File(mediaFile));
+            this.recordedGame = RecordedGame.load(new File(mediaFile), false);
 
             int duration = this.recordedGame.getLastEventTime();
             this.slider.setMax(duration);
@@ -835,6 +836,9 @@ public class Controller implements Initializable {
             throw new RuntimeException("Failed to load the media", e);
         }
 
+        // TODO: Use MediaPlayerEventListener instead of the timer below
+        //mediaPlayerComponent.getMediaPlayer().addMediaPlayerEventListener();
+
         this.videoTimer = new Timer("videoTimer");
         this.videoTimer.scheduleAtFixedRate(new TimerTask() {
             @Override
@@ -842,7 +846,14 @@ public class Controller implements Initializable {
                 int curTime = (int) mediaPlayerComponent.getMediaPlayer().getTime();
                 log.info("Video at " + curTime);
 
+                Platform.runLater(() -> {
+                    // TODO: This is duplicated code
+                    Controller.this.currentTime.setText(String.format("%d:%02d", curTime/1000/60, curTime/1000%60));
+//                    Controller.this.slider.setValue(curTime);
+                });
+
                 // TODO: Ugly, fix
+                // TODO: Also fix the fact that the user may have changed the model (selected move in particular) since last event was applied
                 GameModel currentModel = new GameModel(game, gameHeader, gameCursor);
                 int actionsApplied = recordedGame.applyActionsBetween(currentModel, lastEventTime, curTime);
                 lastEventTime = curTime;
@@ -859,7 +870,7 @@ public class Controller implements Initializable {
                     });
                 }
             }
-        }, 1000, 1000);
+        }, 500, 500);
 
 
         updateVideoPosition(0);
