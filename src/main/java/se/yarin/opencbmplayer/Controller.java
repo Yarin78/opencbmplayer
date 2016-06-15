@@ -803,10 +803,11 @@ public class Controller implements Initializable {
 
     public void reloadVideo() {
 //        String mediaFile = "/Users/yarin/chessbasemedia/mediafiles/TEXT/Ari Ziegler - French Defence/2.wmv";
-        String mediaFile = "/Users/yarin/chessbasemedia/mediafiles/TEXT/Garry Kasparov - Queens Gambit/3.wmv";
+//        String mediaFile = "/Users/yarin/chessbasemedia/mediafiles/TEXT/Garry Kasparov - Queens Gambit/3.wmv";
+        String mediaFile = "/Users/yarin/chessbasemedia/mediafiles/TEXT/Jacob Aagaard - Queen's Indian Defence/Queen's Indian Defence.avi/8.wmv";
         mediaPlayerComponent.getMediaPlayer().prepareMedia(mediaFile);
         try {
-            this.recordedGame = RecordedGame.load(new File(mediaFile), false);
+            this.recordedGame = RecordedGame.load(new File(mediaFile));
 
             int duration = this.recordedGame.getLastEventTime();
             this.slider.setMax(duration);
