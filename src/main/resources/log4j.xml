@@ -11,10 +11,10 @@
     </appender>
 
     <logger name="se.yarin">
-        <level value="DEBUG"/>
+        <level value="INFO"/>
     </logger>
 
-    <logger name="yarin.cbhlib.RecordedGame">
+    <logger name="se.yarin.chess.timeline">
         <level value="DEBUG"/>
     </logger>
 

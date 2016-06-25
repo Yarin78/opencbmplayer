@@ -1,12 +1,6 @@
 package se.yarin.opencbmplayer;
 
 import javafx.application.Platform;
-import javafx.beans.property.FloatProperty;
-import javafx.beans.property.SimpleFloatProperty;
-import javafx.beans.value.ChangeListener;
-import javafx.beans.value.ObservableValue;
-import javafx.event.ActionEvent;
-import javafx.event.Event;
 import javafx.fxml.FXML;
 import javafx.fxml.Initializable;
 import javafx.geometry.Insets;
@@ -16,7 +10,9 @@ import javafx.scene.Scene;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.control.*;
-import javafx.scene.image.*;
+import javafx.scene.image.Image;
+import javafx.scene.image.ImageView;
+import javafx.scene.image.WritableImage;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Pane;
@@ -32,21 +28,23 @@ import javafx.scene.transform.Transform;
 import javafx.util.StringConverter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import uk.co.caprica.vlcj.component.DirectMediaPlayerComponent;
+import se.yarin.cbhlib.annotations.CriticalPositionAnnotation;
+import se.yarin.cbhlib.annotations.GraphicalArrowsAnnotation;
+import se.yarin.cbhlib.annotations.GraphicalSquaresAnnotation;
+import se.yarin.cbhlib.media.ChessBaseMediaException;
+import se.yarin.cbhlib.media.ChessBaseMediaLoader;
+import se.yarin.chess.*;
+import se.yarin.chess.Date;
+import se.yarin.chess.annotations.Annotations;
+import se.yarin.chess.annotations.CommentaryAfterMoveAnnotation;
+import se.yarin.chess.annotations.CommentaryBeforeMoveAnnotation;
+import se.yarin.chess.annotations.SymbolAnnotation;
+import se.yarin.chess.timeline.NavigableGameModelTimeline;
 import uk.co.caprica.vlcj.player.direct.DirectMediaPlayer;
-import yarin.cbhlib.*;
-import yarin.cbhlib.Date;
-import yarin.cbhlib.actions.RecordedAction;
-import yarin.cbhlib.annotations.*;
-import yarin.cbhlib.exceptions.CBHException;
-import yarin.cbhlib.exceptions.CBHFormatException;
-import yarin.cbhlib.exceptions.CBMException;
-import yarin.chess.*;
 
 import java.io.File;
 import java.io.IOException;
 import java.net.URL;
-import java.nio.ByteBuffer;
 import java.util.*;
 
 public class Controller implements Initializable {
@@ -84,13 +82,9 @@ public class Controller implements Initializable {
 
     private CanvasPlayerComponent mediaPlayerComponent;
     private Timer videoTimer;
-    private int lastEventTime;
 
-    private GameMetaData gameHeader;
-    private AnnotatedGame game;
-    private GamePosition gameCursor;
-    private RecordedGame recordedGame;
-    private Map<GamePosition, MoveLabel> positionLabelMap = new HashMap<>();
+    private NavigableGameModelTimeline model;
+    private Map<GameMovesModel.Node, MoveLabel> positionLabelMap = new HashMap<>();
 
     public Controller() {
     }
@@ -163,7 +157,7 @@ public class Controller implements Initializable {
 
         for (int y = 0; y < 8; y++) {
             for (int x = 0; x < 8; x++) {
-                Piece piece = gameCursor.getPosition().pieceAt(y, x);
+                Stone piece = model.getModel().cursor().position().stoneAt(x, y);
                 drawPiece(gc, x, y, piece);
             }
         }
@@ -175,13 +169,12 @@ public class Controller implements Initializable {
     }
 
     private void drawGraphicalSquares(GraphicsContext gc) {
-        GraphicalSquaresAnnotation gsa = game.getAnnotation(gameCursor, GraphicalSquaresAnnotation.class);
+        GraphicalSquaresAnnotation gsa = model.getModel().cursor().getAnnotations().getAnnotation(GraphicalSquaresAnnotation.class);
         if (gsa == null) {
             return;
         }
-        for (GraphicalSquaresAnnotation.GraphicalSquare gsq : gsa.getSquares()) {
-            int xy = gsq.getSquare();
-            int x = xy / 8, y = xy % 8;
+        for (GraphicalSquaresAnnotation.Square gsq : gsa.getSquares()) {
+            int x = Chess.sqiToCol(gsq.getSqi()), y = Chess.sqiToRow(gsq.getSqi());
             Paint p;
             switch (gsq.getColor()) {
                 case GREEN:
@@ -203,13 +196,14 @@ public class Controller implements Initializable {
     }
 
     private void drawGraphicalArrows(GraphicsContext gc) {
-        GraphicalArrowsAnnotation gsa = game.getAnnotation(gameCursor, GraphicalArrowsAnnotation.class);
+        GraphicalArrowsAnnotation gsa = model.getModel().cursor().getAnnotations().getAnnotation(GraphicalArrowsAnnotation.class);
         if (gsa == null) {
             return;
         }
-        for (GraphicalArrowsAnnotation.GraphicalArrow ga : gsa.getArrows()) {
-            int src = ga.getFromSquare(), dest = ga.getToSquare();
-            int x1 = src / 8, y1 = src % 8, x2 = dest / 8, y2 = dest % 8;
+        for (GraphicalArrowsAnnotation.Arrow ga : gsa.getArrows()) {
+            int src = ga.getFromSqi(), dest = ga.getToSqi();
+            int x1 = Chess.sqiToCol(src), y1 = Chess.sqiToRow(src);
+            int x2 = Chess.sqiToCol(dest), y2 = Chess.sqiToRow(dest);
             Paint p;
             switch (ga.getColor()) {
                 case GREEN:
@@ -255,12 +249,12 @@ public class Controller implements Initializable {
         gc.setTransform(new Affine());
     }
 
-    private void drawPiece(GraphicsContext gc, int x, int y, Piece piece) {
-        if (piece.isEmpty()) return;
+    private void drawPiece(GraphicsContext gc, int x, int y, Stone stone) {
+        if (stone.isNoStone()) return;
 
-        int sx = 0, sy = piece.getColor() == Piece.PieceColor.WHITE ? 0 : 1;
+        int sx = 0, sy = stone.toPlayer() == Player.WHITE ? 0 : 1;
 
-        switch (piece.getPiece()) {
+        switch (stone.toPiece()) {
             case PAWN:   sx = 5; break;
             case KNIGHT: sx = 1; break;
             case BISHOP: sx = 2; break;
@@ -396,25 +390,28 @@ public class Controller implements Initializable {
         addText(text, level, 0.0, 0.0, styleClass);
     }
 
-    private void addPreMoveAnnotations(GamePosition node, int level) {
+    private void addPreMoveAnnotations(GameMovesModel.Node node, int level) {
         // TODO: This won't work properly in case of multiple languages
-        TextBeforeMoveAnnotation beforeMoveAnnotation = game.getAnnotation(node, TextBeforeMoveAnnotation.class);
+        CommentaryBeforeMoveAnnotation beforeMoveAnnotation = model.getModel().cursor().getAnnotations().getAnnotation(CommentaryBeforeMoveAnnotation.class);
         if (beforeMoveAnnotation != null) {
-            addText(beforeMoveAnnotation.getText(), level, "comment-label");
+            addText(beforeMoveAnnotation.getCommentary(), level, "comment-label");
         }
     }
 
-    private void addPostMoveAnnotations(GamePosition node, int level) {
-        boolean hasGraphicalAnnotations = game.getAnnotation(node, GraphicalArrowsAnnotation.class) != null ||
-                game.getAnnotation(node, GraphicalSquaresAnnotation.class) != null;
+    private void addPostMoveAnnotations(GameMovesModel.Node node, int level) {
+        Annotations annotations = node.getAnnotations();
+        boolean hasGraphicalAnnotations =
+                annotations.getAnnotation(GraphicalArrowsAnnotation.class) != null ||
+                annotations.getAnnotation(GraphicalSquaresAnnotation.class) != null;
         if (hasGraphicalAnnotations) {
             addImage(new Image("images/graphical-annotation.png", 16, 16, true, true));
         }
 
         // TODO: This won't work properly in case of multiple languages
-        TextAfterMoveAnnotation afterMoveAnnotation = game.getAnnotation(node, TextAfterMoveAnnotation.class);
+        CommentaryAfterMoveAnnotation afterMoveAnnotation = model.getModel().cursor().getAnnotations().getAnnotation(CommentaryAfterMoveAnnotation.class);
+
         if (afterMoveAnnotation != null) {
-            addText(afterMoveAnnotation.getText(), level, "comment-label");
+            addText(afterMoveAnnotation.getCommentary(), level, "comment-label");
         }
     }
 
@@ -422,48 +419,48 @@ public class Controller implements Initializable {
      * Output the last move made with annotations
      * @param node the position after the last move (can be the start position)
      */
-    private void addMove(GamePosition node,
+    private void addMove(GameMovesModel.Node node,
                          boolean showMoveNumber,
                          int level,
                          boolean inlineVariation,
                          boolean headOfVariation) {
-        Move move = node.getLastMove();
+        Move move = node.lastMove();
         addPreMoveAnnotations(node, level);
 
         // Move is null if node is the start position of the game
         if (move != null) {
             // This assumes there can only be on symbol annotation per move
-            SymbolAnnotation symbols = game.getAnnotation(node, SymbolAnnotation.class);
-            MovePrefix movePrefix = symbols == null ? MovePrefix.Nothing : symbols.getMovePrefix();
-            MoveComment moveComment = symbols == null ? MoveComment.Nothing : symbols.getMoveComment();
-            LineEvaluation lineEvaluation = symbols == null ? LineEvaluation.NoEvaluation : symbols.getPositionEval();
+            SymbolAnnotation symbols = model.getModel().cursor().getAnnotations().getAnnotation(SymbolAnnotation.class);
+            MovePrefix movePrefix = symbols == null ? MovePrefix.NOTHING : symbols.getMovePrefix();
+            MoveComment moveComment = symbols == null ? MoveComment.NOTHING : symbols.getMoveComment();
+            LineEvaluation lineEvaluation = symbols == null ? LineEvaluation.NO_EVALUATION : symbols.getLineEvaluation();
 
-            CriticalPositionAnnotation criticalPosition = game.getAnnotation(node, CriticalPositionAnnotation.class);
+            CriticalPositionAnnotation criticalPosition = model.getModel().cursor().getAnnotations().getAnnotation(CriticalPositionAnnotation.class);
 
             // Add move, symbols and move number
             MoveLabel lbl = new MoveLabel(move, node);
-            String moveText = movePrefix.getSymbol();
-            Piece.PieceColor moveColor = node.getBackPosition().getPlayerToMove();
-            if (showMoveNumber || moveColor == Piece.PieceColor.WHITE) {
-                moveText += String.format("%d.", node.getBackPosition().getMoveNumber());
-                if (moveColor == Piece.PieceColor.BLACK) moveText += "..";
+            String moveText = movePrefix.toUnicodeString();
+            Player moveColor = node.parent().position().playerToMove();
+            if (showMoveNumber || moveColor == Player.WHITE) {
+                moveText += String.format("%d.", Chess.plyToMoveNumber(node.parent().ply()));
+                if (moveColor == Player.BLACK) moveText += "..";
             }
 
-            moveText += move.toString(node.getBackPosition().getPosition());
-            moveText += moveComment.getSymbol();
-            moveText += lineEvaluation.getSymbol();
+            moveText += move.toString();
+            moveText += moveComment.toUnicodeString();
+            moveText += lineEvaluation.toUnicodeString();
 
             lbl.setText(moveText);
             lbl.setOnMouseClicked(Controller.this::handleMoveSelected);
             List<String> styles = new ArrayList<>();
             double leftPadding = 4, rightPadding = 4;
-            if (headOfVariation && game.getAnnotation(node, TextBeforeMoveAnnotation.class) == null) {
+            if (headOfVariation && model.getModel().cursor().getAnnotations().getAnnotation(CommentaryBeforeMoveAnnotation.class) == null) {
                 leftPadding = 0;
             }
-            if (node.isEndOfVariation() && game.getAnnotation(node, TextAfterMoveAnnotation.class) == null) {
+            if (!node.hasMoves() && model.getModel().cursor().getAnnotations().getAnnotation(CommentaryAfterMoveAnnotation.class) == null) {
                 rightPadding = 0;
             }
-            if (level == 0 && !game.isSingleLine()) {
+            if (level == 0 && !model.getModel().moves().root().isSingleLine()) {
                 styles.add("main-line");
             } else if (inlineVariation) {
                 styles.add("last-line");
@@ -495,51 +492,50 @@ public class Controller implements Initializable {
         addPostMoveAnnotations(node, level);
     }
 
-    private boolean allVariationsAreSingleLine(GamePosition position) {
-        return position.getMoves()
+    private boolean allVariationsAreSingleLine(GameMovesModel.Node node) {
+        return node.children()
                 .stream()
                 .skip(1) // Skip the main variation
-                .allMatch(move -> position.getForwardPosition(move).isSingleLine());
+                .allMatch(child -> node.isSingleLine());
     }
 
-    private void generateMoveControls(GamePosition position, boolean showMoveNumber,
+    private void generateMoveControls(GameMovesModel.Node node, boolean showMoveNumber,
                                       int level, boolean inlineVariation, String linePrefix) {
         // TODO: Try and make this cleaner by using TextFlow, so we don't have to calculate the width of everything manually
-        if (position.getLastMove() != null) {
-            addMove(position, showMoveNumber, level, inlineVariation, true);
+        if (node.lastMove() != null) {
+            addMove(node, showMoveNumber, level, inlineVariation, true);
             showMoveNumber = false;
         }
 
-        while (!position.isEndOfVariation()) {
-            List<Move> moves = position.getMoves();
+        while (node.hasMoves()) {
+            List<Move> moves = node.moves();
             if (moves.size() == 1) {
-                addMove(position.getForwardPosition(), showMoveNumber, level, inlineVariation, false);
+                addMove(node.mainNode(), showMoveNumber, level, inlineVariation, false);
                 showMoveNumber = false;
             } else {
                 if (inlineVariation) throw new RuntimeException("Found variations in an inline variation");
                 if (level == 0) {
                     // Show main move on existing line, but then one new paragraph per sub-line,
                     // each paragraph starting with [ and ending with ]
-                    addMove(position.getForwardPosition(), showMoveNumber, level, false, false);
+                    addMove(node.mainNode(), showMoveNumber, level, false, false);
 
                     for (int i = 1; i < moves.size(); i++) {
                         addNewRow(level + 1);
                         addText("[", level + 1);
-                        Move subMove = moves.get(i);
-                        generateMoveControls(position.getForwardPosition(subMove), true, level + 1, false, linePrefix);
+                        generateMoveControls(node.children().get(i), true, level + 1, false, linePrefix);
                         addText("]", level + 1);
                     }
                     addNewRow(level);
                     showMoveNumber = true;
-                } else if (allVariationsAreSingleLine(position)) {
+                } else if (allVariationsAreSingleLine(node)) {
                     // Show the alternatives inline, within () and separated by ;
-                    addMove(position.getForwardPosition(), showMoveNumber, level, false, false);
+                    addMove(node.mainNode(), showMoveNumber, level, false, false);
 
                     addText("(", level, 6.0, 0.0, "last-line");
                     pullDownLastIfEOL = true;
                     for (int i = 1; i < moves.size(); i++) {
                         if (i > 1) addText(";", level, 0.0, 3.0, "last-line");
-                        generateMoveControls(position.getForwardPosition(moves.get(i)), true, level, true, linePrefix);
+                        generateMoveControls(node.children().get(i), true, level, true, linePrefix);
                     }
                     addText(")", level, "last-line");
                     showMoveNumber = true;
@@ -560,14 +556,13 @@ public class Controller implements Initializable {
                         String newLinePrefix = linePrefix + (char) (startChar+i);
                         addText(String.format("%s)", newLinePrefix), level + 1, "variation-name");
                         // The main line goes last
-                        Move subMove = moves.get((i+1) % moves.size());
-                        generateMoveControls(position.getForwardPosition(subMove), true, level + 1, false, newLinePrefix);
+                        generateMoveControls(node.children().get((i+1) % moves.size()), true, level + 1, false, newLinePrefix);
 
                     }
                     break;
                 }
             }
-            position = position.getForwardPosition();
+            node = node.mainNode();
         }
     }
 
@@ -582,15 +577,19 @@ public class Controller implements Initializable {
         moveBox.getChildren().clear();
         addNewRow(0);
 
-        addMove(game, false, 0, false, false);
-        generateMoveControls(game, true, 0, false, "");
+        GameMovesModel.Node rootNode = model.getModel().moves().root();
+        addMove(rootNode, false, 0, false, false);
+        generateMoveControls(rootNode, true, 0, false, "");
 
         addNewRow(0);
         // TODO: This doesn't show correct (or at least not the same as CB) in case of forfeits etc
-        addText(gameHeader.getResult(), 0, "main-line");
+        GameResult result = model.getModel().header().getResult();
+        if (result != null) {
+            addText(result.toString(), 0, "main-line");
+        }
 
-        if (gameCursor != null) {
-            selectPosition(gameCursor);
+        if (model.getModel().cursor() != null) {
+            selectPosition(model.getModel().cursor());
         }
 
         long stop = System.currentTimeMillis();
@@ -604,42 +603,43 @@ public class Controller implements Initializable {
 
     private void drawGameHeaderFirstRow() {
         playerNames.getChildren().clear();
-        String white = gameHeader.getWhiteName();
-        String black = gameHeader.getBlackName();
-        int whiteRating = gameHeader.getWhiteElo();
-        int blackRating = gameHeader.getBlackElo();
-        String result = gameHeader.getResult();
+        GameHeaderModel header = model.getModel().header();
+        String white = header.getWhite();
+        String black = header.getBlack();
+        Integer whiteRating = header.getWhiteElo();
+        Integer blackRating = header.getBlackElo();
+        GameResult result = header.getResult();
 
-        if (white.length() > 0) {
+        if (white != null && white.length() > 0) {
             Text txtWhite = new Text(white);
             txtWhite.getStyleClass().add("player-name");
             playerNames.getChildren().add(txtWhite);
-            if (whiteRating > 0) {
+            if (whiteRating != null && whiteRating > 0) {
                 txtWhite = new Text(" " + whiteRating);
                 txtWhite.getStyleClass().add("player-rating");
                 playerNames.getChildren().add(txtWhite);
             }
         }
 
-        if (white.length() > 0 && black.length() > 0) {
+        if (white != null && white.length() > 0 && black != null && black.length() > 0) {
             Text txtVs = new Text(" - ");
             txtVs.getStyleClass().add("player-name");
             playerNames.getChildren().add(txtVs);
         }
 
-        if (black.length() > 0) {
+        if (black != null && black.length() > 0) {
             Text txtBlack = new Text(black);
             txtBlack.getStyleClass().add("player-name");
             playerNames.getChildren().add(txtBlack);
-            if (blackRating > 0) {
+            if (blackRating != null && blackRating > 0) {
                 txtBlack = new Text(" " + blackRating);
                 txtBlack.getStyleClass().add("player-rating");
                 playerNames.getChildren().add(txtBlack);
             }
         }
 
-        if (result.length() > 0) {
-            Text txtResult = new Text(" " + result);
+        if (result != null) {
+            Text txtResult = new Text(" " + result.toString());
             txtResult.getStyleClass().add("game-result");
             playerNames.getChildren().add(txtResult);
         }
@@ -647,27 +647,28 @@ public class Controller implements Initializable {
 
     private void drawGameHeaderSecondRow() {
         gameDetails.getChildren().clear();
+        GameHeaderModel header = model.getModel().header();
 
-        String eco = gameHeader.getEco();
-        String tournament = gameHeader.getEventName();
-        String annotator = gameHeader.getAnnotator();
-        int round = gameHeader.getRound();
-        int subRound = gameHeader.getSubRound();
-        String playedDate = gameHeader.getPlayedDate();
-        String whiteTeam = gameHeader.getWhiteTeam();
-        String blackTeam = gameHeader.getBlackTeam();
+        Eco eco = header.getEco();
+        String tournament = header.getEvent();
+        String annotator = header.getAnnotator();
+        int round = header.getRound();
+        int subRound = header.getSubRound();
+        Date playedDate = header.getDate();
+        String whiteTeam = header.getWhiteTeam();
+        String blackTeam = header.getBlackTeam();
 
-        if (eco.length() > 0) {
-            Text txtECO = new Text(eco + " ");
+        if (eco != null && eco.toString().length() > 0) {
+            Text txtECO = new Text(eco.toString() + " ");
             txtECO.getStyleClass().add("eco");
             gameDetails.getChildren().add(txtECO);
         }
-        if (tournament.length() > 0) {
+        if (tournament != null && tournament.length() > 0) {
             Text txtTournament = new Text(tournament + " ");
             txtTournament.getStyleClass().add("tournament");
             gameDetails.getChildren().add(txtTournament);
         }
-        if (whiteTeam.length() > 0 && blackTeam.length() > 0) {
+        if (whiteTeam != null && whiteTeam.length() > 0 && blackTeam != null && blackTeam.length() > 0) {
             Text txtTeams = new Text(String.format("[%s-%s] ", whiteTeam, blackTeam));
             txtTeams.getStyleClass().add("team");
             gameDetails.getChildren().add(txtTeams);
@@ -685,31 +686,31 @@ public class Controller implements Initializable {
             txtRound.getStyleClass().add("round");
             gameDetails.getChildren().add(txtRound);
         }
-        if (playedDate.toString().length() > 0) {
+        if (playedDate != null) {
             Text txtDate = new Text(playedDate.toString() + " ");
             txtDate.getStyleClass().add("date");
             gameDetails.getChildren().add(txtDate);
         }
-        if (annotator.length() > 0) {
+        if (annotator != null &&  annotator.length() > 0) {
             Text txtAnnotator = new Text(String.format("[%s]", annotator));
             txtAnnotator.getStyleClass().add("annotator");
             gameDetails.getChildren().add(txtAnnotator);
         }
     }
 
-    private void selectPosition(GamePosition position) {
-        if (gameCursor != null) {
+    private void selectPosition(GameMovesModel.Node position) {
+        if (model.getModel().cursor() != null) {
             // Deselect previous selection
-            MoveLabel moveLabel = positionLabelMap.get(gameCursor);
+            MoveLabel moveLabel = positionLabelMap.get(model.getModel().cursor());
             if (moveLabel != null) {
                 moveLabel.getStyleClass().remove("selected-move");
             }
         }
 
-        gameCursor = position;
+        model.getModel().setCursor(position);
 
         // Highlight the selected position
-        MoveLabel moveLabel = positionLabelMap.get(gameCursor);
+        MoveLabel moveLabel = positionLabelMap.get(model.getModel().cursor());
         if (moveLabel != null) {
             moveLabel.getStyleClass().add("selected-move");
         }
@@ -783,11 +784,11 @@ public class Controller implements Initializable {
 
     public void updateVideoPosition(int time) {
         // TODO: This will be a race condition with the timer. It needs to be paused.
-        GameModel newModel = recordedGame.getGameModelAt(time);
-        this.gameHeader = newModel.getHeader();
-        this.game = (AnnotatedGame) newModel.getGame(); // TODO: ugly... please fix
-        this.gameCursor = newModel.getSelectedMove();
-        lastEventTime = time;
+        if (time < model.getCurrentTimestamp()) {
+            model.jumpTo(time);
+        } else {
+            model.playTo(time);
+        }
         this.currentTime.setText(String.format("%d:%02d", time/1000/60, time/1000%60));
         DirectMediaPlayer mp = mediaPlayerComponent.getMediaPlayer();
 
@@ -803,13 +804,13 @@ public class Controller implements Initializable {
 
     public void reloadVideo() {
 //        String mediaFile = "/Users/yarin/chessbasemedia/mediafiles/TEXT/Ari Ziegler - French Defence/2.wmv";
-//        String mediaFile = "/Users/yarin/chessbasemedia/mediafiles/TEXT/Garry Kasparov - Queens Gambit/3.wmv";
-        String mediaFile = "/Users/yarin/chessbasemedia/mediafiles/TEXT/Jacob Aagaard - Queen's Indian Defence/Queen's Indian Defence.avi/8.wmv";
+        String mediaFile = "/Users/yarin/chessbasemedia/mediafiles/TEXT/Garry Kasparov - Queens Gambit/3.wmv";
+//        String mediaFile = "/Users/yarin/chessbasemedia/mediafiles/TEXT/Jacob Aagaard - Queen's Indian Defence/Queen's Indian Defence.avi/8.wmv";
         mediaPlayerComponent.getMediaPlayer().prepareMedia(mediaFile);
         try {
-            this.recordedGame = RecordedGame.load(new File(mediaFile));
+            this.model = ChessBaseMediaLoader.openMedia(new File(mediaFile));
 
-            int duration = this.recordedGame.getLastEventTime();
+            int duration = this.model.getLastEventTimestamp();
             this.slider.setMax(duration);
             this.slider.setMajorTickUnit(120*1000);
             this.slider.setShowTickMarks(true);
@@ -832,8 +833,9 @@ public class Controller implements Initializable {
                 updateVideoPosition(newValue.intValue());
             });
 
-            if (this.gameCursor == null) this.gameCursor = this.game;
-        } catch (IOException | CBMException e) {
+            if (this.model.getModel().cursor() == null)
+                this.model.getModel().setCursor(this.model.getModel().moves().root());
+        } catch (IOException | ChessBaseMediaException e) {
             throw new RuntimeException("Failed to load the media", e);
         }
 
@@ -855,28 +857,22 @@ public class Controller implements Initializable {
 
                 // TODO: Ugly, fix
                 // TODO: Also fix the fact that the user may have changed the model (selected move in particular) since last event was applied
-                GameModel currentModel = new GameModel(game, gameHeader, gameCursor);
-                int actionsApplied = recordedGame.applyActionsBetween(currentModel, lastEventTime, curTime);
-                lastEventTime = curTime;
+                int actionsApplied = model.playTo(curTime);
                 if (actionsApplied > 0) {
-                    game = (AnnotatedGame) currentModel.getGame();
-                    gameHeader = currentModel.getHeader();
-                    gameCursor = currentModel.getSelectedMove();
-
                     Platform.runLater(() -> {
                         drawBoard();
                         drawMoves();
                         drawGameHeader();
-                        selectPosition(gameCursor);
+                        log.info("selecting position " + model.getModel().cursor().lastMove() + " is valid " + model.getModel().cursor().isValid());
+                        selectPosition(model.getModel().cursor());
                     });
                 }
             }
         }, 500, 500);
 
-
         updateVideoPosition(0);
     }
-
+/*
     public void reloadGame(ActionEvent actionEvent) {
         //        String cbhFile = "/Users/yarin/Dropbox/ChessBase/My Games/My White Openings.cbh";
 //        String cbhFile = "/Users/yarin/Dropbox/ChessBase/My Games/jimmy.cbh";
@@ -901,4 +897,5 @@ public class Controller implements Initializable {
         drawMoves();
         drawBoard();
     }
+    */
 }

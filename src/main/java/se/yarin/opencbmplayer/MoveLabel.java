@@ -1,14 +1,14 @@
 package se.yarin.opencbmplayer;
 
 import javafx.scene.control.Label;
-import yarin.chess.GamePosition;
-import yarin.chess.Move;
+import se.yarin.chess.GameMovesModel;
+import se.yarin.chess.Move;
 
 public class MoveLabel extends Label {
     private Move move;
-    private GamePosition node;
+    private GameMovesModel.Node node;
 
-    public MoveLabel(Move move, GamePosition node) {
+    public MoveLabel(Move move, GameMovesModel.Node node) {
         this.move = move;
         this.node = node;
     }
@@ -17,7 +17,7 @@ public class MoveLabel extends Label {
         return move;
     }
 
-    public GamePosition getNode() {
+    public GameMovesModel.Node getNode() {
         return node;
     }
 }
