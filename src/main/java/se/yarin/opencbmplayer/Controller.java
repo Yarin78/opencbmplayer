@@ -1,6 +1,7 @@
 package se.yarin.opencbmplayer;
 
 import javafx.application.Platform;
+import javafx.event.ActionEvent;
 import javafx.fxml.FXML;
 import javafx.fxml.Initializable;
 import javafx.geometry.Insets;
@@ -25,10 +26,12 @@ import javafx.scene.text.Text;
 import javafx.scene.text.TextFlow;
 import javafx.scene.transform.Affine;
 import javafx.scene.transform.Transform;
+import javafx.stage.FileChooser;
 import javafx.util.StringConverter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import se.yarin.cbhlib.annotations.CriticalPositionAnnotation;
+import se.yarin.cbhlib.annotations.GraphicalAnnotationColor;
 import se.yarin.cbhlib.annotations.GraphicalArrowsAnnotation;
 import se.yarin.cbhlib.annotations.GraphicalSquaresAnnotation;
 import se.yarin.cbhlib.media.ChessBaseMediaException;
@@ -39,13 +42,17 @@ import se.yarin.chess.annotations.Annotations;
 import se.yarin.chess.annotations.CommentaryAfterMoveAnnotation;
 import se.yarin.chess.annotations.CommentaryBeforeMoveAnnotation;
 import se.yarin.chess.annotations.SymbolAnnotation;
+import se.yarin.chess.timeline.GameEventException;
 import se.yarin.chess.timeline.NavigableGameModelTimeline;
+import se.yarin.chess.timeline.ReplaceAllEvent;
 import uk.co.caprica.vlcj.player.direct.DirectMediaPlayer;
 
 import java.io.File;
 import java.io.IOException;
 import java.net.URL;
 import java.util.*;
+
+import static se.yarin.chess.Chess.*;
 
 public class Controller implements Initializable {
 
@@ -83,7 +90,7 @@ public class Controller implements Initializable {
     private CanvasPlayerComponent mediaPlayerComponent;
     private Timer videoTimer;
 
-    private NavigableGameModelTimeline model;
+    private NavigableGameModelTimeline model = new NavigableGameModelTimeline();
     private Map<GameMovesModel.Node, MoveLabel> positionLabelMap = new HashMap<>();
 
     public Controller() {
@@ -196,7 +203,9 @@ public class Controller implements Initializable {
     }
 
     private void drawGraphicalArrows(GraphicsContext gc) {
-        GraphicalArrowsAnnotation gsa = model.getModel().cursor().getAnnotations().getAnnotation(GraphicalArrowsAnnotation.class);
+        Annotations annotations = model.getModel().cursor().getAnnotations();
+        log.info("# annotations: " + annotations.size());
+        GraphicalArrowsAnnotation gsa = annotations.getAnnotation(GraphicalArrowsAnnotation.class);
         if (gsa == null) {
             return;
         }
@@ -446,7 +455,7 @@ public class Controller implements Initializable {
                 if (moveColor == Player.BLACK) moveText += "..";
             }
 
-            moveText += move.toString();
+            moveText += move.toSAN();
             moveText += moveComment.toUnicodeString();
             moveText += lineEvaluation.toUnicodeString();
 
@@ -652,8 +661,10 @@ public class Controller implements Initializable {
         Eco eco = header.getEco();
         String tournament = header.getEvent();
         String annotator = header.getAnnotator();
-        int round = header.getRound();
-        int subRound = header.getSubRound();
+        Integer round = header.getRound();
+        Integer subRound = header.getSubRound();
+        if (round == null) round = 0;
+        if (subRound == null) subRound = 0;
         Date playedDate = header.getDate();
         String whiteTeam = header.getWhiteTeam();
         String blackTeam = header.getBlackTeam();
@@ -761,7 +772,8 @@ public class Controller implements Initializable {
         });
 
 //        reloadGame(null);
-        reloadVideo();
+//        reloadVideo();
+//        reloadManualGame();
     }
 
     private void fitImageViewSize(float width, float height) {
@@ -802,13 +814,17 @@ public class Controller implements Initializable {
         drawBoard();
     }
 
-    public void reloadVideo() {
+    public void reloadVideo(String mediaFile) {
 //        String mediaFile = "/Users/yarin/chessbasemedia/mediafiles/TEXT/Ari Ziegler - French Defence/2.wmv";
-        String mediaFile = "/Users/yarin/chessbasemedia/mediafiles/TEXT/Garry Kasparov - Queens Gambit/3.wmv";
+//        String mediaFile = "/Users/yarin/chessbasemedia/mediafiles/TEXT/Garry Kasparov - Queens Gambit/3.wmv";
+        //String mediaFile = "/Users/yarin/src/cbhlib/testmediafiles/GA/Viswanathan Anand - My Career - Volume 1/10.wmv";
 //        String mediaFile = "/Users/yarin/chessbasemedia/mediafiles/TEXT/Jacob Aagaard - Queen's Indian Defence/Queen's Indian Defence.avi/8.wmv";
+//        String mediaFile = "/Users/yarin/chessbasemedia/mediafiles/HEADER/Simon Williams - Most Amazing Moves/Game 15 Spassky-Fischer/Game 15 Spassky-Fischer000.wmv";
+//        String mediaFile = "/Users/yarin/chessbasemedia/mediafiles/CBM168/Festival Biel 2015.html/Biel 2015 round 04 Navara-Wojtaszek.wmv";
+//        String mediaFile = "/Users/yarin/chessbasemedia/mediafiles/CBM168/168Tactics.html/CBM168Taktikeng2/rn1qr3zp3kp2z2p1pR1Qz4P2pz3P3Pz6P1zP5PKz8 w - - 0 1x0y0v4u0.wmv";
         mediaPlayerComponent.getMediaPlayer().prepareMedia(mediaFile);
         try {
-            this.model = ChessBaseMediaLoader.openMedia(new File(mediaFile));
+            this.model = ChessBaseMediaLoader.loadMedia(new File(mediaFile));
 
             int duration = this.model.getLastEventTimestamp();
             this.slider.setMax(duration);
@@ -871,6 +887,39 @@ public class Controller implements Initializable {
         }, 500, 500);
 
         updateVideoPosition(0);
+    }
+
+    public void reloadManualGame() {
+        NavigableGameModel start = new NavigableGameModel();
+        start.addMove(new ShortMove(E2, E4));
+        start.addMove(new ShortMove(E7, E5));
+        start.addAnnotation(new GraphicalSquaresAnnotation(Arrays.asList(
+                new GraphicalSquaresAnnotation.Square(
+                        GraphicalAnnotationColor.GREEN, 1))
+                ));
+        start.addAnnotation(new GraphicalArrowsAnnotation(Arrays.asList(
+                new GraphicalArrowsAnnotation.Arrow(
+                        GraphicalAnnotationColor.GREEN, 1, 2))
+        ));
+        this.model = new NavigableGameModelTimeline();
+        this.model.addEvent(0, new ReplaceAllEvent(start));
+        try {
+            this.model.applyNextEvent();
+        } catch (GameEventException e) {
+            e.printStackTrace();
+        }
+    }
+
+    public void openMediaFile(ActionEvent actionEvent) {
+        FileChooser fileChooser = new FileChooser();
+        fileChooser.setTitle("Open Chessbase Media File");
+        fileChooser.getExtensionFilters().add(
+                new FileChooser.ExtensionFilter("Chessbase Meda file", "*.wmv"));
+        File file = fileChooser.showOpenDialog(null);
+        if (file != null) {
+            log.info("Selected file " + file.getAbsoluteFile());
+            reloadVideo(file.getAbsoluteFile().toString());
+        }
     }
 /*
     public void reloadGame(ActionEvent actionEvent) {

@@ -30,18 +30,15 @@
             <plugin>
                 <groupId>com.zenjava</groupId>
                 <artifactId>javafx-maven-plugin</artifactId>
-                <version>8.1.5</version>
+                <version>8.8.3</version>
                 <configuration>
 
                     <mainClass>se.yarin.opencbmplayer.Main</mainClass>
-                    <identifier>Open CBM Player</identifier>
-
+                    <identifier>Open CBM Player (PoC)</identifier>
                     <!-- only required if signing the jar file -->
                     <keyStoreAlias>example-user</keyStoreAlias>
                     <keyStorePassword>example-password</keyStorePassword>
                     <allPermissions>true</allPermissions>
-
-
                 </configuration>
             </plugin>
 

@@ -20,6 +20,7 @@
         </TilePane>
         <SplitPane fx:id="rightSplitter" orientation="VERTICAL" dividerPositions="0.5" prefHeight="400">
             <!--<Button fx:id="reloadBtn" onAction="#reloadGame">Reload</Button>-->
+            <Button fx:id="openBtn" onAction="#openMediaFile">Open</Button>
             <VBox fx:id="videoBox">
                 <Pane fx:id="playerHolder">
                     <ImageView fx:id="videoImage" fitWidth="300" fitHeight="200"></ImageView>
